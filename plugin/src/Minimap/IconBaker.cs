@@ -83,6 +83,13 @@ namespace PeakMapInteractive.Minimap
         /// <summary>Side of the frame being photographed, read from config per bake.</summary>
         private static int _resolution = 128;
 
+        /// <summary>
+        /// The camera currently taking a photograph, and the fog setting to put
+        /// back once it has.
+        /// </summary>
+        private static Camera _shooting;
+        private static bool _fogWas;
+
         private struct Order
         {
             public string Key;
@@ -238,6 +245,7 @@ namespace PeakMapInteractive.Minimap
             target.Create();
 
             Rig rig = BuildRig(stand.Bounds, target);
+            Watch(rig.Camera);
 
             Plugin.Logger.LogInfo(
                 $"Minimap: baking '{order.Key}' at {_resolution}px — bounds centre {stand.Bounds.center}, " +
@@ -252,8 +260,10 @@ namespace PeakMapInteractive.Minimap
             // second chance later.
             var shot = default(Shot);
             float exposure = 1f;
+            float lastExposure = 0f;
+            float lastAverage = 0f;
 
-            for (int attempt = 1; attempt <= 3; attempt++)
+            for (int attempt = 1; attempt <= 5; attempt++)
             {
                 Expose(stand, exposure);
 
@@ -286,18 +296,20 @@ namespace PeakMapInteractive.Minimap
                 float burnt = (float)shot.Clipped / shot.Drawn;
                 if (burnt <= 0.12f && shot.Average >= Floor) break;
 
-                // Output is gamma-encoded, so brightness moves roughly as the
-                // 1/2.2 power of the light: correcting in one step needs the
-                // ratio raised back by that much.
-                exposure *= Mathf.Pow(Target / Mathf.Max(shot.Average, 1f), 2.2f);
-                exposure = Mathf.Clamp(exposure, 0.002f, 50f);
+                float next = Correct(exposure, shot.Average, lastExposure, lastAverage);
+
+                lastExposure = exposure;
+                lastAverage = shot.Average;
+                exposure = next;
 
                 Plugin.Logger.LogInfo(
                     $"Minimap: '{order.Key}' came out at {shot.Average:0.#} with " +
-                    $"{burnt * 100f:0.#}% burnt out on attempt {attempt}; re-lighting at {exposure:0.###}x.");
+                    $"{burnt * 100f:0.#}% burnt out on attempt {attempt}; re-exposing at {exposure:0.###}x.");
             }
 
             Sprite icon = Finish(order.Key, shot);
+
+            Watch(null);
 
             UnityEngine.Object.Destroy(rig.Root);
             UnityEngine.Object.Destroy(stand.Root);
@@ -320,6 +332,37 @@ namespace PeakMapInteractive.Minimap
                 $"({(int)icon.rect.width}x{(int)icon.rect.height}).");
 
             if (Plugin.Settings.MinimapDumpIcons.Value) Dump(order.Key, icon);
+        }
+
+        /// <summary>
+        /// Where to set the exposure next, from how the last change actually
+        /// landed rather than from how it was supposed to.
+        ///
+        /// Brightness ought to move as the 1/2.2 power of the exposure, and in
+        /// practice it moves more slowly than that, because part of what is on
+        /// screen never came from the base colour at all. Reading the exponent
+        /// off the last two attempts costs nothing and lands in two shots what
+        /// the fixed assumption was still walking towards on the fifth.
+        /// </summary>
+        private static float Correct(float exposure, float average, float lastExposure, float lastAverage)
+        {
+            const float assumed = 1f / 2.2f;
+            float response = assumed;
+
+            if (lastExposure > 0f && lastAverage > 0f
+                && Mathf.Abs(Mathf.Log(exposure / lastExposure)) > 0.05f
+                && Mathf.Abs(Mathf.Log(average / lastAverage)) > 0.01f)
+            {
+                float measured = Mathf.Log(average / lastAverage) / Mathf.Log(exposure / lastExposure);
+
+                // A response of nothing would ask for an infinite correction,
+                // and a response above one is the picture arguing that it got
+                // brighter as the light came down.
+                if (measured > 0.02f && measured < 1.5f) response = measured;
+            }
+
+            float corrected = exposure * Mathf.Pow(Target / Mathf.Max(average, 1f), 1f / response);
+            return Mathf.Clamp(corrected, 0.002f, 50f);
         }
 
         /// <summary>
@@ -486,10 +529,39 @@ namespace PeakMapInteractive.Minimap
                 if (shared[i] == null) continue;
 
                 copies[i] = new Material(shared[i]);
+                Matte(copies[i]);
                 owned.Add(copies[i]);
             }
 
             return copies;
+        }
+
+        /// <summary>
+        /// Takes the shine off a copy.
+        ///
+        /// A highlight does not come from the base colour, so dimming the
+        /// albedo leaves it exactly where it was: a suitcase went from half
+        /// burnt out to a seventh across three attempts and stalled there,
+        /// because what was still white was the gloss. Matte also happens to be
+        /// what an icon wants — at twenty-six pixels a specular streak is not
+        /// shine, it is a hole.
+        /// </summary>
+        private static void Matte(Material material)
+        {
+            Set(material, "_Smoothness", 0f);
+            Set(material, "_Glossiness", 0f);
+            Set(material, "_Metallic", 0f);
+            Set(material, "_SpecularHighlights", 0f);
+            Set(material, "_EnvironmentReflections", 0f);
+
+            int specular = Shader.PropertyToID("_SpecColor");
+            if (material.HasProperty(specular)) material.SetColor(specular, Color.black);
+        }
+
+        private static void Set(Material material, string name, float value)
+        {
+            int id = Shader.PropertyToID(name);
+            if (material.HasProperty(id)) material.SetFloat(id, value);
         }
 
         private static int TintOf(Material material)
@@ -580,8 +652,14 @@ namespace PeakMapInteractive.Minimap
 
                 if (asset == null) return "not URP";
 
+                string fog = RenderSettings.fog
+                    ? $"fog {RenderSettings.fogMode} {RenderSettings.fogColor} " +
+                      $"density {RenderSettings.fogDensity:0.####} " +
+                      $"from {RenderSettings.fogStartDistance:0.#} to {RenderSettings.fogEndDistance:0.#}"
+                    : "no fog";
+
                 return $"additional lights {asset.additionalLightsRenderingMode}, " +
-                       $"ambient {RenderSettings.ambientMode}/{RenderSettings.ambientIntensity:0.##}";
+                       $"ambient {RenderSettings.ambientMode}/{RenderSettings.ambientIntensity:0.##}, {fog}";
             }
             catch (System.Exception error)
             {
@@ -606,7 +684,14 @@ namespace PeakMapInteractive.Minimap
 
             float half = HalfFrame(bounds.extents, rotation);
             float radius = Mathf.Max(bounds.extents.magnitude, 0.1f);
-            float back = radius * 4f + 2f;
+
+            // As close as the subject allows. An orthographic camera frames the
+            // same picture from any distance, so the four radii it used to
+            // stand back bought nothing and cost everything: distance is what
+            // fog is made of, and the camera steps back in proportion to the
+            // size of the subject — which is exactly why the small campfire
+            // came out clean and every large thing came out white.
+            float back = radius * 1.3f + 0.3f;
 
             var root = new GameObject("PeakMapInteractive_IconRig");
             root.transform.SetPositionAndRotation(bounds.center - rotation * Vector3.forward * back, rotation);
@@ -618,7 +703,7 @@ namespace PeakMapInteractive.Minimap
             camera.backgroundColor = Color.black;
             camera.cullingMask = 1 << StandLayerIndex;
             camera.nearClipPlane = 0.01f;
-            camera.farClipPlane = back + radius * 4f;
+            camera.farClipPlane = back + radius * 3f;
             camera.allowHDR = false;
             camera.allowMSAA = false;
             camera.useOcclusionCulling = false;
@@ -657,6 +742,49 @@ namespace PeakMapInteractive.Minimap
             AddLight(root.transform, bounds.center, rotation * new Vector3(1f, 0.1f, -0.9f) * radius * 2.5f, 0.35f);
 
             return new Rig { Root = root, Camera = camera };
+        }
+
+        /// <summary>
+        /// Puts the bake camera under watch, so that the fog can be lifted for
+        /// its frame alone.
+        ///
+        /// Fog is a global setting and it is added on top of the shading, so no
+        /// amount of dimming the copy touches it — a statue stayed seventy per
+        /// cent burnt out with its albedo at four per cent. Switching it off
+        /// outright would strip it from the player's view as well, for the
+        /// third of a second a bake takes. The pipeline hands out a callback
+        /// per camera, which is exactly the seam needed: off for this camera,
+        /// back on before anything else draws.
+        /// </summary>
+        private static void Watch(Camera camera)
+        {
+            if (_shooting == null && camera != null)
+            {
+                UnityEngine.Rendering.RenderPipelineManager.beginCameraRendering += LiftFog;
+                UnityEngine.Rendering.RenderPipelineManager.endCameraRendering += DropFog;
+            }
+            else if (_shooting != null && camera == null)
+            {
+                UnityEngine.Rendering.RenderPipelineManager.beginCameraRendering -= LiftFog;
+                UnityEngine.Rendering.RenderPipelineManager.endCameraRendering -= DropFog;
+            }
+
+            _shooting = camera;
+        }
+
+        private static void LiftFog(UnityEngine.Rendering.ScriptableRenderContext context, Camera camera)
+        {
+            if (camera != _shooting) return;
+
+            _fogWas = RenderSettings.fog;
+            RenderSettings.fog = false;
+        }
+
+        private static void DropFog(UnityEngine.Rendering.ScriptableRenderContext context, Camera camera)
+        {
+            if (camera != _shooting) return;
+
+            RenderSettings.fog = _fogWas;
         }
 
         /// <summary>
