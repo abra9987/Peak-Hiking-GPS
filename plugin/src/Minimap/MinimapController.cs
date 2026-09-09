@@ -264,11 +264,13 @@ namespace PeakMapInteractive.Minimap
             Vector3 focus = player.Center;
 
             Quaternion rotation = Quaternion.Euler(pitch, 0f, 0f);
-            // Far enough back that the near plane never clips the mountain,
-            // which an orthographic camera can afford for free.
-            Vector3 offset = rotation * Vector3.back * 1200f;
 
-            _camera.transform.SetPositionAndRotation(focus - offset, rotation);
+            // Step back along the camera's own view direction. Subtracting
+            // instead put the camera 1200 m *under* the player, looking up
+            // through the inside of the mountain at nothing at all.
+            Vector3 back = rotation * Vector3.back * 1200f;
+
+            _camera.transform.SetPositionAndRotation(focus + back, rotation);
             _camera.orthographicSize = _span * 0.5f;
             _camera.nearClipPlane = 1f;
             _camera.farClipPlane = 4000f;
