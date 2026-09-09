@@ -107,6 +107,34 @@ would port.
 Whether that is worth doing now is an open question. The companion mod reaches
 the goal without it.
 
+## Next task: real icons instead of coloured dots
+
+Markers are currently coloured dots. They should be recognisable pictures of
+the thing — a chest that looks like a chest, a capybara that looks like a
+capybara — the way the reference project (qWojtpl/PeakMap) does it.
+
+That project ships PNGs extracted from the game, which is exactly what this one
+must not do: nothing of PEAK's is copied into the mod, and a Nexus release
+depends on keeping it that way.
+
+Two sources, and only the second works for chests:
+
+- **Items** carry their own icon: `Item.UIData.GetIcon()` returns a Texture2D.
+  This is how the compass in the corner is drawn, and it works today.
+- **Chests do not.** `Luggage` derives from `Spawner`, not `Item`, so there is
+  no icon anywhere in the game to borrow.
+
+So chests need an **icon baked from their own model**: place the prefab in
+front of a throwaway camera against a transparent background, render once to a
+small RenderTexture, keep the sprite, reuse it for every marker of that type.
+Bake lazily on first sighting and cache by type name. Animals want the same
+treatment.
+
+Worth getting right while building it: a dark rim or drop shadow, or icons will
+disappear against sand and snow the way the plain dots did; and the height
+shading that currently tints the dot has to survive, since knowing whether a
+chest is above or below is the single most useful thing the map says.
+
 ## Open threads
 
 - Location names: the internal biome enum does not match what players call
