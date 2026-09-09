@@ -15,6 +15,17 @@
     <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
   </PropertyGroup>
 
+  <!--
+    The navigator artwork, built into the assembly rather than shipped beside
+    it: nothing for a user to lose and nothing for a mod manager to miss. It is
+    ours, drawn for this mod, which is why it can ship at all - none of PEAK's
+    own art is here, and the marker icons are photographed at runtime for
+    exactly that reason.
+  -->
+  <ItemGroup>
+    <EmbeddedResource Include="assets\*.png" />
+  </ItemGroup>
+
   <ItemGroup>
     <PackageReference Include="BepInEx.Core" Version="5.*" />
     <PackageReference Include="BepInEx.PluginInfoProps" Version="2.*" />

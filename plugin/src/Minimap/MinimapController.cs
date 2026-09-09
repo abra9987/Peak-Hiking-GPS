@@ -23,6 +23,14 @@ namespace PeakMapInteractive.Minimap
     internal sealed class MinimapController : MonoBehaviour
     {
         private const int Resolution = 512;
+
+        /// <summary>
+        /// The map is rendered at the shape of the screen it is shown on, not
+        /// as a square. The navigator's screen is slightly wider than it is
+        /// tall, and a square texture stretched into it would lean every
+        /// slope on the mountain.
+        /// </summary>
+        private static int TextureHeight => Mathf.RoundToInt(Resolution / Navigator.ScreenAspect);
         private const int MaxMarkers = 64;
         private const float MarkerRefreshSeconds = 0.4f;
 
@@ -70,9 +78,13 @@ namespace PeakMapInteractive.Minimap
         private Canvas _canvas;
         private RectTransform _frame;
         private RectTransform _panel;
-        private RectTransform _compass;
+        private RectTransform _markerLayer;
         private RectTransform _playerMarker;
         private TextMeshProUGUI _readout;
+
+        private readonly RectTransform[] _buttons = new RectTransform[3];
+        private readonly Image[] _buttonFaces = new Image[3];
+        private readonly float[] _pressedUntil = new float[3];
 
         private float _lastAltitude;
         private float _climbRate;
@@ -159,7 +171,7 @@ namespace PeakMapInteractive.Minimap
             _camera.depth = -50f;   // never composites over the player's view
             _camera.cullingMask = WorldMask();
 
-            _target = new RenderTexture(Resolution, Resolution, 24, RenderTextureFormat.ARGB32)
+            _target = new RenderTexture(Resolution, TextureHeight, 24, RenderTextureFormat.ARGB32)
             {
                 name = "PeakMapInteractive_Minimap",
                 useMipMap = false,
@@ -197,101 +209,193 @@ namespace PeakMapInteractive.Minimap
             canvasObject.AddComponent<CanvasScaler>();
 
             float size = Plugin.Settings.MinimapSize.Value;
-            const float border = 7f;
-            const float readoutHeight = 46f;
 
-            // A frame around the whole thing, with the numbers inside it. Loose
-            // elements floating over the world read as debug output; a bordered
-            // panel reads as part of the game's interface.
-            var frameObject = new GameObject("Frame");
-            frameObject.transform.SetParent(canvasObject.transform, worldPositionStays: false);
+            // The device is one drawing on a square canvas, and everything on
+            // it — screen, buttons — is placed as a fraction of that square. So
+            // there is a single number to size it by, and nothing that has to
+            // be kept in step by hand.
+            var deviceObject = new GameObject("Navigator");
+            deviceObject.transform.SetParent(canvasObject.transform, worldPositionStays: false);
 
-            _frame = frameObject.AddComponent<RectTransform>();
+            _frame = deviceObject.AddComponent<RectTransform>();
             _frame.anchorMin = _frame.anchorMax = new Vector2(1f, 1f);
             _frame.pivot = new Vector2(1f, 1f);
-            _frame.anchoredPosition = new Vector2(-18f, -18f);
-            _frame.sizeDelta = new Vector2(size + border * 2f, size + border * 2f + readoutHeight);
+            _frame.anchoredPosition = new Vector2(-14f, -14f);
+            _frame.sizeDelta = new Vector2(size * Navigator.Aspect, size);
 
-            var frameImage = frameObject.AddComponent<Image>();
-            frameImage.color = new Color(0.06f, 0.07f, 0.09f, 0.92f);
-            frameImage.raycastTarget = false;
+            // The screen is added first so that the case and the glass drawn
+            // after it land on top: UI draws in the order things were added.
+            var screenObject = new GameObject("Screen");
+            screenObject.transform.SetParent(deviceObject.transform, worldPositionStays: false);
 
-            var frameOutline = frameObject.AddComponent<Outline>();
-            frameOutline.effectColor = new Color(0.75f, 0.66f, 0.48f, 0.85f);
-            frameOutline.effectDistance = new Vector2(2f, -2f);
+            _panel = screenObject.AddComponent<RectTransform>();
+            Fill(_panel, Navigator.ScreenArea);
 
-            var panelObject = new GameObject("Panel");
-            panelObject.transform.SetParent(frameObject.transform, worldPositionStays: false);
+            var map = screenObject.AddComponent<RawImage>();
+            map.texture = _target;
+            map.raycastTarget = false;
 
-            _panel = panelObject.AddComponent<RectTransform>();
-            _panel.anchorMin = _panel.anchorMax = new Vector2(0.5f, 1f);
-            _panel.pivot = new Vector2(0.5f, 1f);
-            _panel.anchoredPosition = new Vector2(0f, -border);
-            _panel.sizeDelta = new Vector2(size, size);
+            // Markers live on a layer of their own, added before the numbers.
+            // They are created as things come into range, which is to say
+            // later than everything built here — and UI draws in the order
+            // things were added, so without a layer to sit in, every chest
+            // that came along was drawn over the altitude.
+            var markerObject = new GameObject("Markers");
+            markerObject.transform.SetParent(screenObject.transform, worldPositionStays: false);
 
-            var image = panelObject.AddComponent<RawImage>();
-            image.texture = _target;
-            image.raycastTarget = false;
+            _markerLayer = markerObject.AddComponent<RectTransform>();
+            Fill(_markerLayer, Rect.MinMaxRect(0f, 0f, 1f, 1f));
 
-            _playerMarker = CreateArrow(panelObject.transform);
-            _readout = CreateReadout(frameObject.transform);
-            _compass = CreateCompass(panelObject.transform);
+            _playerMarker = CreateArrow(markerObject.transform);
+            _readout = CreateReadout(screenObject.transform, size);
+
+            // Buttons before the case, so the case is what shapes them. The
+            // recesses are holes straight through the drawing, so a button
+            // that merely fits one leaves its corners open to whatever is
+            // behind the device, and pushing it down on a press opened a gap
+            // along the top. Sat behind the case and drawn oversized, it covers
+            // the hole with room to spare and the hole's own edge trims it.
+            BuildButtons(deviceObject.transform);
+
+            Cover(deviceObject.transform, "Glass", Navigator.Glass);
+            Cover(deviceObject.transform, "Body", Navigator.Body);
+
+            if (!Navigator.Available)
+                Plugin.Logger.LogWarning("Minimap: the navigator artwork did not load; the map is on its own.");
         }
 
         /// <summary>
-        /// The game's own compass item, in the corner of the map, turning
-        /// towards the nearest chest.
+        /// How much wider than its recess a button face is drawn, and how far
+        /// it shrinks when pressed.
         ///
-        /// Using the actual item icon rather than a drawn arrow is the point:
-        /// a player who has held that compass knows instantly what it does, so
-        /// the overlay needs no explaining.
+        /// Both states have to stay larger than the hole, because the hole goes
+        /// straight through the drawing: anything the face does not cover shows
+        /// the mountain through it. Sitting behind the case, the surplus is
+        /// invisible — the hole's edge trims the face — so all a press changes
+        /// is how much of the glyph the window shows, which is what a button
+        /// being pushed in looks like.
         /// </summary>
-        private static RectTransform CreateCompass(Transform parent)
+        private const float Overlap = 0.14f;
+        private const float PressedScale = 0.93f;
+
+        /// <summary>Grows a rect outward by a fraction of its own size.</summary>
+        private static Rect Grow(Rect area, float by)
+            => Rect.MinMaxRect(
+                area.xMin - area.width * by,
+                area.yMin - area.height * by,
+                area.xMax + area.width * by,
+                area.yMax + area.height * by);
+
+        /// <summary>Stretches a rect across a fraction of its parent.</summary>
+        private static void Fill(RectTransform rect, Rect area)
         {
-            var holder = new GameObject("Compass");
+            rect.anchorMin = area.min;
+            rect.anchorMax = area.max;
+            rect.offsetMin = Vector2.zero;
+            rect.offsetMax = Vector2.zero;
+        }
+
+        /// <summary>
+        /// One full-size layer of the device drawing. Skipped when its artwork
+        /// is missing, rather than drawn as a white rectangle.
+        /// </summary>
+        private static void Cover(Transform parent, string name, Sprite sprite)
+        {
+            if (sprite == null) return;
+
+            var holder = new GameObject(name);
+            holder.transform.SetParent(parent, worldPositionStays: false);
+
+            Fill(holder.AddComponent<RectTransform>(), Rect.MinMaxRect(0f, 0f, 1f, 1f));
+
+            var image = holder.AddComponent<Image>();
+            image.sprite = sprite;
+            image.raycastTarget = false;
+        }
+
+        /// <summary>
+        /// The three buttons, sitting in the recesses drawn for them.
+        ///
+        /// They cannot be clicked — during a run the cursor belongs to the game
+        /// — so they are not controls. They are there because a device has
+        /// buttons, and because a keypress ought to be acknowledged by
+        /// something other than the scale silently changing.
+        /// </summary>
+        private void BuildButtons(Transform parent)
+        {
+            for (int index = 0; index < Navigator.ButtonCount && index < _buttons.Length; index++)
+            {
+                Sprite face = Navigator.Button(index);
+                if (face == null) continue;
+
+                var holder = new GameObject("Button" + index);
+                holder.transform.SetParent(parent, worldPositionStays: false);
+
+                var rect = holder.AddComponent<RectTransform>();
+                Fill(rect, Grow(Navigator.ButtonArea(index), Overlap));
+
+                var image = holder.AddComponent<Image>();
+                image.sprite = face;
+                image.raycastTarget = false;
+
+                // Filling the recess, not fitted inside it. A face fitted while
+                // keeping its own proportions sat in the middle of its recess
+                // at about seventy per cent, which reads as a button that has
+                // come loose. The faces are a little squarer than the recesses,
+                // so filling stretches them by about a sixth — invisible on a
+                // plus and a minus, and worth it to make the button look
+                // seated.
+                image.preserveAspect = false;
+
+                _buttons[index] = rect;
+                _buttonFaces[index] = image;
+            }
+        }
+
+        /// <summary>A plain coloured rectangle, positioned as a fraction of its parent.</summary>
+        private static RectTransform Panel(Transform parent, string name, Rect area, Color colour)
+        {
+            var holder = new GameObject(name);
             holder.transform.SetParent(parent, worldPositionStays: false);
 
             var rect = holder.AddComponent<RectTransform>();
-            rect.anchorMin = rect.anchorMax = new Vector2(0f, 0f);
-            rect.pivot = new Vector2(0f, 0f);
-            rect.anchoredPosition = new Vector2(8f, 8f);
-            rect.sizeDelta = new Vector2(64f, 64f);
+            Fill(rect, area);
 
             var image = holder.AddComponent<Image>();
-            image.sprite = CompassSprite() ?? ArrowSprite();
-            image.color = Color.white;
+            image.color = colour;
             image.raycastTarget = false;
-            image.preserveAspect = true;
 
             return rect;
         }
 
-        private static Sprite _compassSprite;
-
         /// <summary>
-        /// Pulls the compass icon out of the item the game has already loaded.
-        /// Nothing is copied into the mod, so no artwork is redistributed.
+        /// Presses a button, for about as long as a press looks like it lasts.
+        ///
+        /// A second drawing per button would be better and does not exist yet,
+        /// so the face shrinks into its recess and darkens, which is what a
+        /// button being pushed in looks like from directly above. Short on
+        /// purpose: a held zoom key repeats faster than a long animation could
+        /// finish, and a face still moving after the scale has changed twice
+        /// reads as lag rather than as feedback.
         /// </summary>
-        private static Sprite CompassSprite()
+        private void Press(int index)
         {
-            if (_compassSprite != null) return _compassSprite;
+            if (index < 0 || index >= _buttons.Length) return;
 
-            foreach (Item item in Resources.FindObjectsOfTypeAll<Item>())
+            _pressedUntil[index] = Time.unscaledTime + 0.09f;
+        }
+
+        private void UpdateButtons()
+        {
+            for (int index = 0; index < _buttons.Length; index++)
             {
-                if (item == null || item.UIData == null) continue;
+                if (_buttons[index] == null) continue;
 
-                string name = item.UIData.itemName ?? item.name ?? string.Empty;
-                if (name.IndexOf("compass", System.StringComparison.OrdinalIgnoreCase) < 0) continue;
+                bool down = Time.unscaledTime < _pressedUntil[index];
 
-                Texture2D icon = item.UIData.GetIcon();
-                if (icon == null) continue;
-
-                _compassSprite = Sprite.Create(
-                    icon, new Rect(0f, 0f, icon.width, icon.height), new Vector2(0.5f, 0.5f));
-                return _compassSprite;
+                _buttons[index].localScale = Vector3.one * (down ? PressedScale : 1f);
+                _buttonFaces[index].color = down ? new Color(0.74f, 0.74f, 0.76f) : Color.white;
             }
-
-            return null;
         }
 
         /// <summary>
@@ -300,26 +404,43 @@ namespace PeakMapInteractive.Minimap
         /// PEAK is scored on height, and a map is the one view that hides it:
         /// looking down flattens away the only axis the run is about.
         /// </summary>
-        private static TextMeshProUGUI CreateReadout(Transform parent)
+        private static TextMeshProUGUI CreateReadout(Transform parent, float deviceSize)
         {
-            var textObject = new GameObject("Readout");
-            textObject.transform.SetParent(parent, worldPositionStays: false);
+            // A dark strip along the bottom of the screen, the way a handheld
+            // unit puts its numbers under the map. On the screen rather than on
+            // the case: the case is a solid moulded object, and printing on it
+            // would read as a sticker.
+            var stripObject = new GameObject("Status");
+            stripObject.transform.SetParent(parent, worldPositionStays: false);
 
-            // Inside the frame's bottom strip, which is what the strip is for.
-            // It used to hang below the frame instead — pinned to the bottom
-            // edge and then grown downwards from it — so the numbers were
-            // printed over the sky. Nobody caught it because until the map
-            // could photograph itself, nobody had looked at it.
+            var strip = stripObject.AddComponent<RectTransform>();
+            strip.anchorMin = new Vector2(0f, 0f);
+            strip.anchorMax = new Vector2(1f, 0.2f);
+            strip.offsetMin = Vector2.zero;
+            strip.offsetMax = Vector2.zero;
+
+            var backing = stripObject.AddComponent<Image>();
+            backing.color = new Color(0.05f, 0.06f, 0.08f, 0.72f);
+            backing.raycastTarget = false;
+
+            var textObject = new GameObject("Readout");
+            textObject.transform.SetParent(stripObject.transform, worldPositionStays: false);
+
             var rect = textObject.AddComponent<RectTransform>();
-            rect.anchorMin = new Vector2(0f, 0f);
-            rect.anchorMax = new Vector2(1f, 0f);
-            rect.pivot = new Vector2(0.5f, 0f);
-            rect.anchoredPosition = new Vector2(0f, 5f);
-            rect.sizeDelta = new Vector2(0f, 40f);
+            rect.anchorMin = Vector2.zero;
+            rect.anchorMax = Vector2.one;
+            rect.offsetMin = Vector2.zero;
+            rect.offsetMax = Vector2.zero;
 
             var text = textObject.AddComponent<TextMeshProUGUI>();
             text.font = GameFont();
-            text.fontSize = 17f;
+
+            // Sized to whatever fits. The line is two numbers wide at the
+            // beach and four in the Citadel, and at a fixed size the long
+            // version ran off the screen and printed across the case.
+            text.enableAutoSizing = true;
+            text.fontSizeMin = 7f;
+            text.fontSizeMax = Mathf.Max(10f, deviceSize * 0.045f);
             text.alignment = TextAlignmentOptions.Center;
             text.color = new Color(0.94f, 0.94f, 0.92f);
             text.raycastTarget = false;
@@ -497,21 +618,30 @@ namespace PeakMapInteractive.Minimap
             if (!ready) return;
 
             if (Input.GetKeyDown(Plugin.Settings.MinimapZoomInKey.Value))
+            {
                 _zoom = Mathf.Max(_zoom - 1, 0);
+                Press(2);
+            }
 
             if (Input.GetKeyDown(Plugin.Settings.MinimapZoomOutKey.Value))
+            {
                 _zoom = Mathf.Min(_zoom + 1, Spans.Length - 1);
+                Press(0);
+            }
 
             if (Input.GetKeyDown(Plugin.Settings.MinimapAngleKey.Value))
+            {
                 _pitchIndex = (_pitchIndex + 1) % Pitches.Length;
+                Press(1);
+            }
 
             if (Input.GetKeyDown(Plugin.Settings.MinimapBakeAllKey.Value)) BakeEverything();
 
             Follow();
             AimPlayerArrow();
             UpdateMarkers();
+            UpdateButtons();
             UpdateReadout();
-            UpdateCompass();
         }
 
         /// <summary>
@@ -677,39 +807,6 @@ namespace PeakMapInteractive.Minimap
             _readout.text = line;
         }
 
-        /// <summary>
-        /// Points the compass at the nearest chest, relative to where the
-        /// player is facing, the way a compass held in the hand behaves.
-        /// </summary>
-        private void UpdateCompass()
-        {
-            Character player = Character.localCharacter;
-            if (_compass == null || player == null) return;
-
-            // Always on screen. It used to disappear whenever there was no
-            // chest in range, which is exactly when a player looks at it to
-            // work out which way they are facing — and a control that vanishes
-            // reads as broken rather than as empty.
-            //
-            // With nothing to point at it points north, which is what a compass
-            // does when it is not being asked anything.
-            bool hasTarget = TryNearestLoot(player.Center, out Vector3 target, out float _);
-
-            Vector3 delta = hasTarget ? target - player.Center : Vector3.forward;
-            float bearing = Mathf.Atan2(delta.x, delta.z) * Mathf.Rad2Deg;
-            float facing = MainCamera.instance != null
-                ? MainCamera.instance.transform.eulerAngles.y
-                : 0f;
-
-            // The needle is painted into the icon rather than being a separate
-            // part, so the whole thing turns — hat and all, which reads as the
-            // compass being turned in hand. The offset accounts for where that
-            // painted needle already points, without which it would aim wide
-            // by a fixed angle forever.
-            float painted = Plugin.Settings.MinimapCompassNeedleOffset.Value;
-            _compass.localRotation = Quaternion.Euler(0f, 0f, -((bearing - facing) - painted));
-        }
-
         private bool TryNearestLoot(Vector3 from, out Vector3 position, out float distance)
         {
             position = Vector3.zero;
@@ -764,7 +861,7 @@ namespace PeakMapInteractive.Minimap
             Character self = Character.localCharacter;
             float baseSize = Plugin.Settings.MinimapMarkerSize.Value;
             bool wantIcons = Plugin.Settings.MinimapIcons.Value;
-            Vector2 panel = _panel.sizeDelta;
+            Vector2 panel = _panel.rect.size;
             int used = 0;
 
             for (int i = 0; i < _sightings.Count && used < MaxMarkers; i++)
@@ -852,7 +949,7 @@ namespace PeakMapInteractive.Minimap
         private Marker MarkerAt(int index)
         {
             while (_markers.Count <= index)
-                _markers.Add(CreateMarker(_panel, $"Marker{_markers.Count}"));
+                _markers.Add(CreateMarker(_markerLayer, $"Marker{_markers.Count}"));
 
             return _markers[index];
         }
