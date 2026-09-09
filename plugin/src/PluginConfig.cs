@@ -32,6 +32,9 @@ namespace PeakMapInteractive
         public readonly ConfigEntry<UnityEngine.KeyCode> MinimapZoomOutKey;
         public readonly ConfigEntry<UnityEngine.KeyCode> MinimapAngleKey;
         public readonly ConfigEntry<float> MinimapCompassNeedleOffset;
+        public readonly ConfigEntry<bool> MinimapIcons;
+        public readonly ConfigEntry<float> MinimapMarkerSize;
+        public readonly ConfigEntry<bool> MinimapDumpIcons;
 
         public PluginConfig(ConfigFile cfg)
         {
@@ -138,6 +141,27 @@ namespace PeakMapInteractive
                     "clockwise from up. The whole icon is rotated to aim that needle, so this " +
                     "is what stops it pointing off by a fixed amount.",
                     new AcceptableValueRange<float>(-180f, 180f)));
+
+            MinimapIcons = cfg.Bind(
+                "Minimap", "Icons", true,
+                "Draw markers as pictures of the thing rather than as coloured dots. The " +
+                "picture is photographed from the model already loaded in the game, once per " +
+                "kind of thing, so nothing of PEAK's is copied and nothing is shipped. " +
+                "Turn off to go back to plain markers.");
+
+            MinimapMarkerSize = cfg.Bind(
+                "Minimap", "MarkerSizePixels", 26f,
+                new ConfigDescription(
+                    "How large a marker is drawn. Markers still grow and shrink around this " +
+                    "figure with how far above or below you the thing sits. Large enough that " +
+                    "the picture inside is recognisable is the whole constraint.",
+                    new AcceptableValueRange<float>(8f, 48f)));
+
+            MinimapDumpIcons = cfg.Bind(
+                "Debug", "DumpIcons", false,
+                "Write every baked marker icon to an 'icons' folder in the output directory, " +
+                "as a PNG. The only way to judge whether an icon reads as what it is without " +
+                "squinting at it twenty pixels across in the corner of the screen.");
 
             WriteDiagnostics = cfg.Bind(
                 "Debug", "WriteDiagnostics", false,

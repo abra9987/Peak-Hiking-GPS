@@ -54,6 +54,10 @@ Not yet confirmed by anyone playing:
   view direction, which may end up inside rock in the Roots gullies or the
   Citadel. If it does, back off by terrain height instead of a fixed distance.
 - **Marker height shading** uses a plus or minus 60 m scale, picked by eye.
+- **Everything about the baked icons**, below.
+
+Also new and unseen: capybaras, the scoutmaster and mobs are marked now. They
+are found by component, the way chests are, rather than by name.
 
 ## Things worth not rediscovering
 
@@ -107,33 +111,54 @@ would port.
 Whether that is worth doing now is an open question. The companion mod reaches
 the goal without it.
 
-## Next task: real icons instead of coloured dots
+## Marker icons: built, not yet seen
 
-Markers are currently coloured dots. They should be recognisable pictures of
-the thing — a chest that looks like a chest, a capybara that looks like a
-capybara — the way the reference project (qWojtpl/PeakMap) does it.
+Markers are no longer coloured dots. Each one is now a round plate with a
+photograph of the thing standing on it — `plugin/src/Minimap/IconBaker.cs`.
 
-That project ships PNGs extracted from the game, which is exactly what this one
-must not do: nothing of PEAK's is copied into the mod, and a Nexus release
-depends on keeping it that way.
+Nothing of PEAK's is copied. The photograph is taken on the player's own
+machine, from the model already loaded in the scene, because there was no icon
+to borrow: `Luggage` derives from `Spawner`, not `Item`, so `UIData.GetIcon()`
+— which is how the compass is drawn — has nothing to offer a chest.
 
-Two sources, and only the second works for chests:
+How it works, and why each part is the way it is:
 
-- **Items** carry their own icon: `Item.UIData.GetIcon()` returns a Texture2D.
-  This is how the compass in the corner is drawn, and it works today.
-- **Chests do not.** `Luggage` derives from `Spawner`, not `Item`, so there is
-  no icon anywhere in the game to borrow.
+- A **render-only copy** of the object is built out of bare meshes and
+  materials. Instantiating the object itself would wake a `Luggage` up, add it
+  to `ALL_LUGGAGE` and bring a `PhotonView` along, so photographing a chest
+  would quietly edit the run.
+- The copy is stood up at **y = -9000**, below the water box, on an unused
+  layer, and photographed by an orthographic camera that draws only that layer.
+- The view is along whichever horizontal axis the object is **thinnest**, so
+  the widest silhouette faces the lens. A capybara seen end-on is a brown blob.
+- The rig brings **its own point lights**, because the icon is baked once and
+  kept: a chest photographed at 3 a.m. under the game's own sun would stay a
+  black shape for the rest of the run. Their intensity is computed from the
+  distance, since a point light falls off with its square and the distance is
+  proportional to the size of the subject.
+- `Camera.Render()` still does nothing under URP, so the bake waits for a real
+  frame and reads the texture back afterwards.
+- The result is trimmed to what was drawn, so every icon carries the same
+  visual weight, and mipmapped, because 128 pixels drawn at twenty sparkles.
 
-So chests need an **icon baked from their own model**: place the prefab in
-front of a throwaway camera against a transparent background, render once to a
-small RenderTexture, keep the sprite, reuse it for every marker of that type.
-Bake lazily on first sighting and cache by type name. Animals want the same
-treatment.
+The plate underneath survived on purpose: it still carries the category colour
+and the height shading, which is the one thing a top-down map cannot say and
+the thing this map is for. The icon only darkens when it is below the player —
+an `Image` tint multiplies, so lightening a photograph merely washes it out.
 
-Worth getting right while building it: a dark rim or drop shadow, or icons will
-disappear against sand and snow the way the plain dots did; and the height
-shading that currently tints the dot has to survive, since knowing whether a
-chest is above or below is the single most useful thing the map says.
+**None of it has been seen yet.** Set `Debug/DumpIcons = true` and every baked
+icon is written to `capture-output/icons/*.png`, which is the only way to judge
+one without squinting at it twenty pixels across. Things to check first:
+
+- Whether the shaders write alpha for opaque surfaces. If not there is a
+  fallback that keys against the background, and the log says when it fires.
+- Whether the two point lights are the right brightness against ambient.
+- Whether chests, capybaras and the scoutmaster are recognisable at
+  `Minimap/MarkerSizePixels` (26 by default).
+
+Icons that come out unreadable are the case for drawing that one in Blender
+instead and embedding the PNG: our own artwork carries no licence problem, and
+the marker code does not care where a sprite came from.
 
 ## Open threads
 

@@ -45,7 +45,7 @@ namespace PeakMapInteractive.Minimap
         private float _lastAltitude;
         private float _climbRate;
 
-        private readonly List<RectTransform> _markerPool = new List<RectTransform>();
+        private readonly List<Marker> _markers = new List<Marker>();
         private readonly List<MarkerSighting> _sightings = new List<MarkerSighting>();
         private float _nextMarkerScan;
 
@@ -59,6 +59,33 @@ namespace PeakMapInteractive.Minimap
             public Vector3 World;
             public Color Colour;
             public bool IsLoot;
+
+            /// <summary>What kind of thing this is, for looking up its icon.</summary>
+            public string IconKey;
+
+            /// <summary>
+            /// The object itself, so an icon can be baked from its model the
+            /// first time one of these is drawn. Null for anything drawn as a
+            /// plain marker, such as the other climbers.
+            /// </summary>
+            public GameObject Source;
+        }
+
+        /// <summary>
+        /// One marker on the map: a coloured plate carrying the category and
+        /// the height reading, and, once it has been baked, a picture of the
+        /// thing itself on top of it.
+        ///
+        /// Two layers rather than one because they answer different questions.
+        /// The picture says what it is; the plate says whether it is above you
+        /// or below, and gives the picture something to stand out against when
+        /// the ground underneath is sand or snow.
+        /// </summary>
+        private sealed class Marker
+        {
+            public RectTransform Root;
+            public Image Plate;
+            public Image Icon;
         }
 
         private void Awake()
@@ -302,19 +329,92 @@ namespace PeakMapInteractive.Minimap
         }
 
         /// <summary>
-        /// A marker with a dark rim. Without one a yellow dot vanishes against
-        /// sand and a purple one against shadow, which defeats the point of
-        /// being able to spot loot from across the map.
+        /// Builds an empty marker: a round plate, and an icon slot above it
+        /// that stays hidden until a picture has been baked for whatever the
+        /// marker turns out to be.
+        ///
+        /// Both layers carry a dark rim. Without one a yellow plate vanishes
+        /// against sand and a brown suitcase against mud, which defeats the
+        /// point of being able to spot loot from across the map.
         /// </summary>
-        private static RectTransform CreateOutlinedDot(Transform parent, string name, float size)
+        private static Marker CreateMarker(Transform parent, string name)
         {
-            RectTransform rect = CreateDot(parent, name, Color.white, size);
+            var holder = new GameObject(name);
+            holder.transform.SetParent(parent, worldPositionStays: false);
 
-            var outline = rect.gameObject.AddComponent<Outline>();
+            var root = holder.AddComponent<RectTransform>();
+            root.anchorMin = root.anchorMax = new Vector2(0.5f, 0.5f);
+            root.pivot = new Vector2(0.5f, 0.5f);
+
+            Image plate = CreateLayer(root, "Plate", Vector2.zero, Vector2.one);
+            plate.sprite = DiscSprite();
+
+            // Inset, so the plate reads as a ring around the picture rather
+            // than as a background the picture is glued onto.
+            Image icon = CreateLayer(root, "Icon", new Vector2(0.12f, 0.12f), new Vector2(0.88f, 0.88f));
+            icon.preserveAspect = true;
+            icon.gameObject.SetActive(false);
+
+            return new Marker { Root = root, Plate = plate, Icon = icon };
+        }
+
+        private static Image CreateLayer(Transform parent, string name, Vector2 anchorMin, Vector2 anchorMax)
+        {
+            var holder = new GameObject(name);
+            holder.transform.SetParent(parent, worldPositionStays: false);
+
+            var rect = holder.AddComponent<RectTransform>();
+            rect.anchorMin = anchorMin;
+            rect.anchorMax = anchorMax;
+            rect.offsetMin = Vector2.zero;
+            rect.offsetMax = Vector2.zero;
+
+            var image = holder.AddComponent<Image>();
+            image.raycastTarget = false;
+
+            var outline = holder.AddComponent<Outline>();
             outline.effectColor = new Color(0f, 0f, 0f, 0.85f);
             outline.effectDistance = new Vector2(1.6f, -1.6f);
 
-            return rect;
+            return image;
+        }
+
+        private static Sprite _disc;
+
+        /// <summary>
+        /// A circle, drawn rather than shipped. The markers were squares until
+        /// now — the default UI sprite — which read as debug output next to
+        /// anything the game draws itself.
+        /// </summary>
+        private static Sprite DiscSprite()
+        {
+            if (_disc != null) return _disc;
+
+            const int size = 64;
+            const float radius = size * 0.5f - 1f;
+
+            var texture = new Texture2D(size, size, TextureFormat.RGBA32, false);
+            var centre = new Vector2(size * 0.5f, size * 0.5f);
+
+            for (int y = 0; y < size; y++)
+            {
+                for (int x = 0; x < size; x++)
+                {
+                    float distance = Vector2.Distance(new Vector2(x + 0.5f, y + 0.5f), centre);
+
+                    // One pixel of feather, so the rim is a circle and not a
+                    // staircase at the sizes these are actually drawn at.
+                    float alpha = Mathf.Clamp01(radius - distance);
+                    texture.SetPixel(x, y, new Color(1f, 1f, 1f, alpha));
+                }
+            }
+
+            texture.Apply();
+            texture.filterMode = FilterMode.Bilinear;
+            texture.wrapMode = TextureWrapMode.Clamp;
+
+            _disc = Sprite.Create(texture, new Rect(0f, 0f, size, size), new Vector2(0.5f, 0.5f));
+            return _disc;
         }
 
         private static RectTransform CreateDot(Transform parent, string name, Color colour, float size)
@@ -560,6 +660,10 @@ namespace PeakMapInteractive.Minimap
                 ScanForMarkers();
             }
 
+            Character self = Character.localCharacter;
+            float baseSize = Plugin.Settings.MinimapMarkerSize.Value;
+            bool wantIcons = Plugin.Settings.MinimapIcons.Value;
+            Vector2 panel = _panel.sizeDelta;
             int used = 0;
 
             for (int i = 0; i < _sightings.Count && used < MaxMarkers; i++)
@@ -568,26 +672,49 @@ namespace PeakMapInteractive.Minimap
                 if (viewport.z <= 0f) continue;
                 if (viewport.x < 0f || viewport.x > 1f || viewport.y < 0f || viewport.y > 1f) continue;
 
-                RectTransform dot = MarkerAt(used++);
-                dot.gameObject.SetActive(true);
-                dot.GetComponent<Image>().color = ShadeByHeight(_sightings[i]);
+                Marker marker = MarkerAt(used++);
+                marker.Root.gameObject.SetActive(true);
+                marker.Root.anchoredPosition = new Vector2(
+                    (viewport.x - 0.5f) * panel.x,
+                    (viewport.y - 0.5f) * panel.y);
 
-                Vector2 size = _panel.sizeDelta;
-                dot.anchoredPosition = new Vector2(
-                    (viewport.x - 0.5f) * size.x,
-                    (viewport.y - 0.5f) * size.y);
+                float height = self != null
+                    ? Mathf.Clamp((_sightings[i].World.y - self.Center.y) / 60f, -1f, 1f)
+                    : 0f;
 
-                Character self = Character.localCharacter;
-                if (self != null)
-                {
-                    float up = Mathf.Clamp((_sightings[i].World.y - self.Center.y) / 60f, -1f, 1f);
-                    float scale = Mathf.Lerp(9f, 17f, (up + 1f) * 0.5f);
-                    dot.sizeDelta = new Vector2(scale, scale);
-                }
+                float size = baseSize * Mathf.Lerp(0.7f, 1.25f, (height + 1f) * 0.5f);
+                marker.Root.sizeDelta = new Vector2(size, size);
+                marker.Plate.color = ShadeByHeight(_sightings[i].Colour, height);
+
+                Sprite icon = wantIcons ? IconFor(_sightings[i]) : null;
+                marker.Icon.gameObject.SetActive(icon != null);
+
+                if (icon == null) continue;
+
+                marker.Icon.sprite = icon;
+                marker.Icon.color = ShadeIconByHeight(height);
             }
 
-            for (int i = used; i < _markerPool.Count; i++)
-                _markerPool[i].gameObject.SetActive(false);
+            for (int i = used; i < _markers.Count; i++)
+                _markers[i].Root.gameObject.SetActive(false);
+        }
+
+        /// <summary>
+        /// The picture for a marker, asking for one to be baked the first time
+        /// this kind of thing is drawn.
+        ///
+        /// Baking is deliberately driven from here rather than from the scan:
+        /// only what is actually on screen is worth photographing, and the scan
+        /// reaches further than the window does.
+        /// </summary>
+        private static Sprite IconFor(MarkerSighting sighting)
+        {
+            if (string.IsNullOrEmpty(sighting.IconKey)) return null;
+
+            Sprite baked = IconBaker.Get(sighting.IconKey);
+            if (baked == null) IconBaker.Request(sighting.IconKey, sighting.Source);
+
+            return baked;
         }
 
         /// <summary>
@@ -603,25 +730,30 @@ namespace PeakMapInteractive.Minimap
         /// Higher reads lighter and larger, lower reads darker and smaller,
         /// the way distance already reads on any map.
         /// </summary>
-        private Color ShadeByHeight(MarkerSighting sighting)
+        private static Color ShadeByHeight(Color colour, float height)
+            => height >= 0f
+                ? Color.Lerp(colour, Color.white, height * 0.65f)
+                : Color.Lerp(colour, new Color(0.16f, 0.14f, 0.18f), -height * 0.7f);
+
+        /// <summary>
+        /// The same reading applied to the picture, but only downwards.
+        ///
+        /// An <see cref="Image"/> tint multiplies, so lightening a photograph
+        /// towards white only washes it out, and the plate underneath already
+        /// says "above you" clearly enough. Darkening still works, and things
+        /// below you receding into shadow is what the eye expects anyway.
+        /// </summary>
+        private static Color ShadeIconByHeight(float height)
+            => height >= 0f
+                ? Color.white
+                : Color.Lerp(Color.white, new Color(0.5f, 0.47f, 0.55f), -height);
+
+        private Marker MarkerAt(int index)
         {
-            Character player = Character.localCharacter;
-            if (player == null) return sighting.Colour;
+            while (_markers.Count <= index)
+                _markers.Add(CreateMarker(_panel, $"Marker{_markers.Count}"));
 
-            float up = sighting.World.y - player.Center.y;
-            float t = Mathf.Clamp(up / 60f, -1f, 1f);
-
-            return t >= 0f
-                ? Color.Lerp(sighting.Colour, Color.white, t * 0.65f)
-                : Color.Lerp(sighting.Colour, new Color(0.16f, 0.14f, 0.18f), -t * 0.7f);
-        }
-
-        private RectTransform MarkerAt(int index)
-        {
-            while (_markerPool.Count <= index)
-                _markerPool.Add(CreateOutlinedDot(_panel, $"Marker{_markerPool.Count}", 13f));
-
-            return _markerPool[index];
+            return _markers[index];
         }
 
         private void ScanForMarkers()
@@ -637,6 +769,10 @@ namespace PeakMapInteractive.Minimap
             {
                 if (other == null || other == player) continue;
 
+                // No icon: a scout is a different scout every run, and the
+                // model is customised per player, so a photograph of one would
+                // be a picture of somebody in particular rather than of a
+                // category. The colour already says alive or dead.
                 _sightings.Add(new MarkerSighting
                 {
                     World = other.Center,
@@ -672,7 +808,26 @@ namespace PeakMapInteractive.Minimap
                     {
                         World = chest.transform.position,
                         Colour = new Color(1f, 0.72f, 0.25f),
-                        IsLoot = true
+                        IsLoot = true,
+                        IconKey = IconBaker.KeyFor(chest.gameObject),
+                        Source = chest.gameObject
+                    });
+
+                    if (_sightings.Count >= MaxMarkers) return;
+                    continue;
+                }
+
+                if (TryCreature(collider, out GameObject creature, out Color creatureColour))
+                {
+                    if (!seen.Add(creature.GetInstanceID())) continue;
+
+                    _sightings.Add(new MarkerSighting
+                    {
+                        World = creature.transform.position,
+                        Colour = creatureColour,
+                        IsLoot = false,
+                        IconKey = IconBaker.KeyFor(creature),
+                        Source = creature
                     });
 
                     if (_sightings.Count >= MaxMarkers) return;
@@ -687,10 +842,51 @@ namespace PeakMapInteractive.Minimap
                 {
                     World = go.transform.position,
                     Colour = colour,
-                    IsLoot = isLoot
+                    IsLoot = isLoot,
+                    IconKey = IconBaker.KeyFor(go),
+                    Source = go
                 });
                 if (_sightings.Count >= MaxMarkers) return;
             }
+        }
+
+        /// <summary>
+        /// The living things on the mountain, found by component the way chests
+        /// are: a capybara is worth walking towards and a scoutmaster is worth
+        /// walking away from, and both are the kind of thing a picture says
+        /// instantly and a coloured dot never could.
+        /// </summary>
+        private static bool TryCreature(Collider collider, out GameObject go, out Color colour)
+        {
+            var capybara = collider.GetComponentInParent<Capybara>();
+            if (capybara != null)
+            {
+                go = capybara.gameObject;
+                colour = new Color(0.85f, 0.62f, 0.35f);
+                return true;
+            }
+
+            var scoutmaster = collider.GetComponentInParent<Scoutmaster>();
+            if (scoutmaster != null)
+            {
+                go = scoutmaster.gameObject;
+                colour = new Color(0.95f, 0.25f, 0.3f);
+                return true;
+            }
+
+            // Crabs and jellyfish. They are hazards rather than landmarks, but
+            // knowing one is on the ledge above changes the line you pick.
+            var mob = collider.GetComponentInParent<Mob>();
+            if (mob != null)
+            {
+                go = mob.gameObject;
+                colour = new Color(0.6f, 0.85f, 0.55f);
+                return true;
+            }
+
+            go = null;
+            colour = default;
+            return false;
         }
 
         /// <summary>
