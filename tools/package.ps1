@@ -56,27 +56,54 @@ if ($LASTEXITCODE -ne 0) { throw 'Build failed.' }
 $assembly = Join-Path $repo "plugin\bin\$Configuration\HikingGPS.dll"
 if (-not (Test-Path $assembly)) { throw "Built nothing at $assembly" }
 
-$staging = Join-Path ([System.IO.Path]::GetTempPath()) "peakmap-$version-$(Get-Random)"
-$plugin = Join-Path $staging 'BepInEx\plugins\HikingGPS'
+function New-Package {
+    param([string] $Name, [string] $PluginPath, [string[]] $Extras)
 
-New-Item -ItemType Directory -Force -Path $plugin | Out-Null
-Copy-Item $assembly $plugin
+    $staging = Join-Path ([System.IO.Path]::GetTempPath()) "hikinggps-$Name-$(Get-Random)"
+    $target = Join-Path $staging $PluginPath
 
-$readme = Join-Path $repo 'docs\MOD-README.md'
-if (Test-Path $readme) { Copy-Item $readme (Join-Path $staging 'README.md') }
+    New-Item -ItemType Directory -Force -Path $target | Out-Null
+    Copy-Item $assembly $target
+
+    foreach ($extra in $Extras) {
+        $source = Join-Path $repo $extra
+        if (Test-Path $source) { Copy-Item $source $staging }
+        else { Write-Warning "Missing $extra" }
+    }
+
+    $zip = Join-Path $OutputDirectory "HikingGPS-$version-$Name.zip"
+    if (Test-Path $zip) { Remove-Item $zip }
+
+    Compress-Archive -Path (Join-Path $staging '*') -DestinationPath $zip
+    Remove-Item $staging -Recurse -Force
+
+    $size = [math]::Round((Get-Item $zip).Length / 1MB, 2)
+    Write-Host "  $Name  $size MB" -ForegroundColor Green
+
+    Add-Type -AssemblyName System.IO.Compression.FileSystem
+    $archive = [System.IO.Compression.ZipFile]::OpenRead($zip)
+    try { $archive.Entries | Where-Object { $_.Name } | ForEach-Object { "      $($_.FullName)" } }
+    finally { $archive.Dispose() }
+}
 
 New-Item -ItemType Directory -Force -Path $OutputDirectory | Out-Null
-$zip = Join-Path $OutputDirectory "HikingGPS-$version.zip"
 
-if (Test-Path $zip) { Remove-Item $zip }
-Compress-Archive -Path (Join-Path $staging '*') -DestinationPath $zip
-Remove-Item $staging -Recurse -Force
+# Thunderstore reads the package from its root: the manifest and the icon have
+# to be top-level files, and the plugin goes in a bare `plugins` folder. This
+# is the one the mod managers install.
+New-Package -Name 'thunderstore' -PluginPath 'plugins' -Extras @(
+    'packaging\manifest.json',
+    'packaging\icon.png',
+    'packaging\CHANGELOG.md',
+    'packaging\LICENSE',
+    'packaging\README.md'
+)
 
-$size = [math]::Round((Get-Item $zip).Length / 1MB, 2)
-Write-Host "Packed $zip ($size MB)" -ForegroundColor Green
-Write-Host 'Contents:' -ForegroundColor DarkGray
+# Nexus and anyone installing by hand extract over the game folder instead, so
+# the archive has to carry the path the file actually belongs at.
+New-Package -Name 'nexus' -PluginPath 'BepInEx\plugins\HikingGPS' -Extras @(
+    'packaging\LICENSE',
+    'packaging\README.md'
+)
 
-Add-Type -AssemblyName System.IO.Compression.FileSystem
-$archive = [System.IO.Compression.ZipFile]::OpenRead($zip)
-try { $archive.Entries | ForEach-Object { "  $($_.FullName)" } }
-finally { $archive.Dispose() }
+Write-Host "Both archives are in $OutputDirectory" -ForegroundColor Cyan
