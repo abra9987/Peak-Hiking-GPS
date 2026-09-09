@@ -1,4 +1,6 @@
 using System.Collections.Generic;
+using System.Linq;
+using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
 using Zorro.Core;
@@ -36,6 +38,10 @@ namespace PeakMapInteractive.Minimap
         private Canvas _canvas;
         private RectTransform _panel;
         private RectTransform _playerMarker;
+        private TextMeshProUGUI _readout;
+
+        private float _lastAltitude;
+        private float _climbRate;
 
         private readonly List<RectTransform> _markerPool = new List<RectTransform>();
         private readonly List<MarkerSighting> _sightings = new List<MarkerSighting>();
@@ -50,6 +56,7 @@ namespace PeakMapInteractive.Minimap
         {
             public Vector3 World;
             public Color Colour;
+            public bool IsLoot;
         }
 
         private void Awake()
@@ -129,6 +136,51 @@ namespace PeakMapInteractive.Minimap
             image.raycastTarget = false;
 
             _playerMarker = CreateArrow(panelObject.transform);
+            _readout = CreateReadout(panelObject.transform);
+        }
+
+        /// <summary>
+        /// Altitude, and how fast it is changing, under the map.
+        ///
+        /// PEAK is a game about getting higher; a map that shows only where you
+        /// are on the ground leaves out the axis the whole run is measured on.
+        /// The trend arrow answers the question you actually ask mid-climb —
+        /// am I still gaining height on this line, or has it flattened out.
+        /// </summary>
+        private static TextMeshProUGUI CreateReadout(Transform parent)
+        {
+            var textObject = new GameObject("Readout");
+            textObject.transform.SetParent(parent, worldPositionStays: false);
+
+            var rect = textObject.AddComponent<RectTransform>();
+            rect.anchorMin = new Vector2(0f, 0f);
+            rect.anchorMax = new Vector2(1f, 0f);
+            rect.pivot = new Vector2(0.5f, 1f);
+            rect.anchoredPosition = new Vector2(0f, -4f);
+            rect.sizeDelta = new Vector2(0f, 46f);
+
+            var text = textObject.AddComponent<TextMeshProUGUI>();
+            text.font = GameFont();
+            text.fontSize = 17f;
+            text.alignment = TextAlignmentOptions.Top;
+            text.color = new Color(0.94f, 0.94f, 0.92f);
+            text.raycastTarget = false;
+            text.enableWordWrapping = false;
+
+            return text;
+        }
+
+        /// <summary>
+        /// The game's own font, borrowed from whatever it has already loaded,
+        /// so the overlay reads as part of PEAK rather than as something bolted
+        /// on. Falls back to whatever TMP offers if that fails.
+        /// </summary>
+        private static TMP_FontAsset GameFont()
+        {
+            TMP_FontAsset font = Resources.FindObjectsOfTypeAll<TMP_FontAsset>()
+                .FirstOrDefault(f => f != null && f.characterTable != null && f.characterTable.Count > 64);
+
+            return font ?? TMP_Settings.defaultFontAsset;
         }
 
         /// <summary>
@@ -214,6 +266,7 @@ namespace PeakMapInteractive.Minimap
             Follow();
             AimPlayerArrow();
             UpdateMarkers();
+            UpdateReadout();
         }
 
         /// <summary>
@@ -291,6 +344,51 @@ namespace PeakMapInteractive.Minimap
             _playerMarker.localRotation = Quaternion.Euler(0f, 0f, -yaw);
         }
 
+        /// <summary>
+        /// Writes altitude, whether it is rising, and how far the nearest bit
+        /// of loot is.
+        /// </summary>
+        private void UpdateReadout()
+        {
+            Character player = Character.localCharacter;
+            if (_readout == null || player == null) return;
+
+            float altitude = player.Center.y;
+
+            // Smoothed, because raw frame-to-frame change flickers between up
+            // and down on every step and reads as noise.
+            float delta = (altitude - _lastAltitude) / Mathf.Max(Time.deltaTime, 1e-4f);
+            _climbRate = Mathf.Lerp(_climbRate, delta, 0.08f);
+            _lastAltitude = altitude;
+
+            string trend = _climbRate > 0.35f ? "<color=#7FE08A>^</color>"
+                : _climbRate < -0.35f ? "<color=#E08A7F>v</color>"
+                : "<color=#8A909A>-</color>";
+
+            string line = $"{trend} {Mathf.RoundToInt(altitude)} m";
+
+            float nearest = NearestLootDistance(player.Center);
+            if (nearest < float.MaxValue)
+                line += System.Environment.NewLine + $"<color=#FFB84A>loot {Mathf.RoundToInt(nearest)} m</color>";
+
+            _readout.text = line;
+        }
+
+        private float NearestLootDistance(Vector3 from)
+        {
+            float best = float.MaxValue;
+
+            for (int i = 0; i < _sightings.Count; i++)
+            {
+                if (!_sightings[i].IsLoot) continue;
+
+                float distance = Vector3.Distance(from, _sightings[i].World);
+                if (distance < best) best = distance;
+            }
+
+            return best;
+        }
+
         // --- markers ---------------------------------------------------------
 
         /// <summary>
@@ -356,7 +454,8 @@ namespace PeakMapInteractive.Minimap
                     World = other.Center,
                     Colour = other.data != null && other.data.dead
                         ? new Color(0.55f, 0.55f, 0.6f)
-                        : new Color(0.35f, 0.75f, 1f)
+                        : new Color(0.35f, 0.75f, 1f),
+                    IsLoot = false
                 });
             }
 
@@ -372,9 +471,14 @@ namespace PeakMapInteractive.Minimap
                 GameObject go = collider.gameObject;
                 if (!seen.Add(go.GetInstanceID())) continue;
 
-                if (!TryClassify(go, out Color colour)) continue;
+                if (!TryClassify(go, out Color colour, out bool isLoot)) continue;
 
-                _sightings.Add(new MarkerSighting { World = go.transform.position, Colour = colour });
+                _sightings.Add(new MarkerSighting
+                {
+                    World = go.transform.position,
+                    Colour = colour,
+                    IsLoot = isLoot
+                });
                 if (_sightings.Count >= MaxMarkers) return;
             }
         }
@@ -383,19 +487,23 @@ namespace PeakMapInteractive.Minimap
         /// Recognises the things worth walking towards, by the same names the
         /// export uses, so both halves of the project agree on what counts.
         /// </summary>
-        private static bool TryClassify(GameObject go, out Color colour)
+        private static bool TryClassify(GameObject go, out Color colour, out bool isLoot)
         {
             string name = go.name.ToLowerInvariant();
+            isLoot = false;
 
-            if (name.Contains("spawner") || name.Contains("sfx") || name.Contains("trigger"))
+            if (name.Contains("spawner") || name.Contains("sfx") || name.Contains("trigger")
+                || name.Contains("ambience") || name.Contains("zone"))
             {
                 colour = default;
                 return false;
             }
 
-            if (name.Contains("luggage")) { colour = new Color(1f, 0.72f, 0.25f); return true; }
+            // Loot is what the distance readout tracks: things worth a detour.
+            if (name.Contains("luggage")) { colour = new Color(1f, 0.72f, 0.25f); isLoot = true; return true; }
+            if (name.Contains("amulet")) { colour = new Color(0.3f, 1f, 0.55f); isLoot = true; return true; }
+
             if (name.Contains("bell")) { colour = new Color(0.72f, 0.45f, 1f); return true; }
-            if (name.Contains("amulet")) { colour = new Color(0.3f, 1f, 0.55f); return true; }
             if (name.Contains("campfire")) { colour = new Color(1f, 0.45f, 0.2f); return true; }
             if (name.Contains("tomb")) { colour = new Color(0.7f, 0.75f, 0.8f); return true; }
             if (name.Contains("statue")) { colour = new Color(0.6f, 0.6f, 0.65f); return true; }
