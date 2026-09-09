@@ -32,32 +32,119 @@ tools/    Clone setup, capture supervision, publishing       (PowerShell)
 
 **`AutoRun` and the minimap are mutually exclusive.** Capture automation
 dismisses the loading screen mid-spawn and borrows the camera; playing under it
-leaves the character half-initialised and under the terrain.
+leaves the character half-initialised and under the terrain. The unattended icon
+run is the one exception, and it forces the map visible on purpose: it only
+needs a loaded level to photograph, not a working character.
 
-## The minimap, and what is unverified
+## The minimap
 
 Toggle `M`, zoom `=` / `-`, tilt `N` (90 / 75 / 45 degrees). North stays up.
+`F10` photographs every kind of thing on the whole mountain at once.
 
-Working as of the last run: the view itself, altitude with a smoothed trend
-arrow, distance and height difference to the nearest unopened chest, markers
-shaded and sized by how far above or below the player they sit, other climbers
-marked at any distance, a bordered frame, and the game's own font.
+The map opens only once the run has actually started, and waits for the later
+of two things: the game's own idea of having begun — not passed out on the
+beach, not warping, standing on something, which is what
+`Character.TestSpawnChallengeItems` waits for — and ten seconds from the
+mountain finishing loading. `isGrounded` alone goes true the instant a body
+touches sand, long before the character has got up.
 
-Not yet confirmed by anyone playing:
+Zoom is a fixed ladder: 20, 29, 41, 58, 83, 119, 170, 243, 347, 496, 708, 1012,
+1446, 2000 metres across. It opens on the third rung and returns there each
+time it opens. It used to multiply whatever the span happened to be, so there
+was no such thing as a step. The marker scan does not shrink with the view — it
+reaches 250 m at any zoom, because the compass and the readout name the nearest
+chest and want to see past the edge of the picture.
+
+Still not confirmed by anyone playing:
 
 - **Compass aim.** The icon is a single image with the needle painted in under a
   pirate hat, so the whole thing rotates. `CompassNeedleOffset` (default 45)
-  says where that painted needle already points; if the compass aims wide by a
-  constant angle, that is the number to change. `-135` if the red end is the
-  pointer rather than the white.
+  says where that painted needle already points. `-135` if the red end is the
+  pointer rather than the white. It also sits half outside the panel's left
+  edge, which the screenshots show and nobody has needed fixed, because the
+  compass is being replaced by a drawn navigator.
 - **Tilted views in tight terrain.** The camera steps back 1200 m along its own
   view direction, which may end up inside rock in the Roots gullies or the
   Citadel. If it does, back off by terrain height instead of a fixed distance.
 - **Marker height shading** uses a plus or minus 60 m scale, picked by eye.
-- **Everything about the baked icons**, below.
+- **Which rung to open on.** Three is 41 metres, and at that scale the crashed
+  plane fills the window and the chests are visible in the world anyway, so the
+  markers nearly duplicate what is already drawn. They start earning their place
+  around the fifth or sixth rung.
 
-Also new and unseen: capybaras, the scoutmaster and mobs are marked now. They
-are found by component, the way chests are, rather than by name.
+## Marker icons
+
+Markers are a round plate with a photograph of the thing standing on it —
+`plugin/src/Minimap/IconBaker.cs`. Chests, capybaras, the scoutmaster, mobs,
+statues, bells, belltowers and campfires all come out recognisable at
+twenty-six pixels.
+
+Nothing of PEAK's is copied. The photograph is taken on the player's own
+machine from the model already in the scene, because there was no icon to
+borrow: `Luggage` derives from `Spawner`, not `Item`, so `UIData.GetIcon()` —
+which is how the compass is drawn — has nothing to offer a chest.
+
+The plate underneath survived on purpose: it carries the category colour and
+the height shading, which is the one thing a top-down map cannot say and the
+thing this map is for. The icon only darkens when it is below the player, since
+an `Image` tint multiplies and lightening a photograph merely washes it out.
+
+### What it took, and what each thing cost to find
+
+Every one of these produced a plausible-looking failure that hid the next.
+
+- **A render-only copy, not an instance.** A copied `Luggage` wakes up, joins
+  `ALL_LUGGAGE` and brings a `PhotonView`, so photographing a chest would have
+  edited the run. The copy is bare meshes, materials and transforms.
+- **Alpha does not survive.** Told to clear to transparent, URP hands back a
+  fully opaque texture, so trimming to "what was drawn" trimmed the whole frame
+  and every icon was a black square. The object is photographed twice instead,
+  against black and against white: unchanged pixels are the object, black-to-
+  white ones are empty, and the gap between is the alpha the pipeline withheld.
+- **`WaitForEndOfFrame` inside the end-of-frame phase resumes in that same
+  phase.** Back-to-back bakes read the texture twice with no render between and
+  got two identical frames. Wait a whole frame instead.
+- **Exposure has to be a real control.** Turning the rig's own lamps down does
+  not reach: a statue stayed 72% burnt out with them at a twentieth, because
+  the scene's sun and ambient were doing the work. Dimming the copy's own
+  albedo scales every source at once.
+- **Scale every colour the shader declares, not just `_BaseColor`.** PEAK's rock
+  shader blends `_Color1`, `_Color21`, `_Color3`, `_TopColor` and `_Tint`; the
+  scout statue has nine colours in one material, and dimming one of them moved
+  245 to 239 and no further. Shaders are asked what they have rather than
+  guessed at by name.
+- **Matte the copy.** A highlight does not come from the base colour, so
+  dimming albedo left the gloss where it was. At map size a specular streak
+  reads as a hole anyway.
+- **Stand close.** The camera is orthographic and frames the same picture from
+  any distance, so standing back four radii bought nothing.
+- **Keep the best attempt.** Every shot after the first is an experiment, and
+  one of them — falling back to an unlit shader — rescued the scout statue and
+  ruined a marble one that was already fine.
+- **Level afterwards.** The 2nd and 98th percentile of the object are stretched
+  across the range, which brings a statue's folds back and a suitcase's straps
+  up with one rule.
+- **Names are generous.** "Statues" was 83 metres of Citadel masonry and "Floor
+  Statues" 120 metres of floor. Over thirty metres across is scenery you stand
+  in, not somewhere you walk to. The sweep also stops at the first match rather
+  than descending, or a belltower and its own bell become two icons.
+
+### Working on them without playing
+
+Dialling icons in was costing five minutes of climbing per attempt, to reach
+one statue. It costs nothing now.
+
+Set `Automation/AutoRun`, `Automation/QuitWhenDone`, `Minimap/AutoBakeIcons` and
+`Debug/DumpIcons`, then launch. The game walks itself into a solo run, wakes all
+six biomes — everything above the beach exists but every renderer under it is
+inactive until a player gets close — photographs every kind of thing, writes
+each icon and a screenshot of the map to `capture-output/icons/`, and quits.
+About a minute, unattended. Put `AutoRun` back to false to play.
+
+The screenshot matters as much as the icons. Judging a PNG on its own says
+nothing about twenty-six pixels on a plate over sand, and the first screenshot
+immediately showed the altitude readout had been printing over the sky since it
+was written.
 
 ## Things worth not rediscovering
 
@@ -111,56 +198,18 @@ would port.
 Whether that is worth doing now is an open question. The companion mod reaches
 the goal without it.
 
-## Marker icons: built, not yet seen
-
-Markers are no longer coloured dots. Each one is now a round plate with a
-photograph of the thing standing on it — `plugin/src/Minimap/IconBaker.cs`.
-
-Nothing of PEAK's is copied. The photograph is taken on the player's own
-machine, from the model already loaded in the scene, because there was no icon
-to borrow: `Luggage` derives from `Spawner`, not `Item`, so `UIData.GetIcon()`
-— which is how the compass is drawn — has nothing to offer a chest.
-
-How it works, and why each part is the way it is:
-
-- A **render-only copy** of the object is built out of bare meshes and
-  materials. Instantiating the object itself would wake a `Luggage` up, add it
-  to `ALL_LUGGAGE` and bring a `PhotonView` along, so photographing a chest
-  would quietly edit the run.
-- The copy is stood up at **y = -9000**, below the water box, on an unused
-  layer, and photographed by an orthographic camera that draws only that layer.
-- The view is along whichever horizontal axis the object is **thinnest**, so
-  the widest silhouette faces the lens. A capybara seen end-on is a brown blob.
-- The rig brings **its own point lights**, because the icon is baked once and
-  kept: a chest photographed at 3 a.m. under the game's own sun would stay a
-  black shape for the rest of the run. Their intensity is computed from the
-  distance, since a point light falls off with its square and the distance is
-  proportional to the size of the subject.
-- `Camera.Render()` still does nothing under URP, so the bake waits for a real
-  frame and reads the texture back afterwards.
-- The result is trimmed to what was drawn, so every icon carries the same
-  visual weight, and mipmapped, because 128 pixels drawn at twenty sparkles.
-
-The plate underneath survived on purpose: it still carries the category colour
-and the height shading, which is the one thing a top-down map cannot say and
-the thing this map is for. The icon only darkens when it is below the player —
-an `Image` tint multiplies, so lightening a photograph merely washes it out.
-
-**None of it has been seen yet.** Set `Debug/DumpIcons = true` and every baked
-icon is written to `capture-output/icons/*.png`, which is the only way to judge
-one without squinting at it twenty pixels across. Things to check first:
-
-- Whether the shaders write alpha for opaque surfaces. If not there is a
-  fallback that keys against the background, and the log says when it fires.
-- Whether the two point lights are the right brightness against ambient.
-- Whether chests, capybaras and the scoutmaster are recognisable at
-  `Minimap/MarkerSizePixels` (26 by default).
-
-Icons that come out unreadable are the case for drawing that one in Blender
-instead and embedding the PNG: our own artwork carries no licence problem, and
-the marker code does not care where a sprite came from.
-
 ## Open threads
+
+- **A drawn navigator to hold the map.** The bordered frame reads as an overlay
+  rather than as something from the game, and the compass in the corner was
+  only ever there to excuse that. The plan is artwork: a device body with a
+  transparent hole for the screen, an optional glass layer of scratches drawn
+  over the map, and two-frame press artwork for the zoom buttons. The map is
+  drawn as a rectangle underneath and the body covers everything outside the
+  hole, so the hole can be any shape. Buttons cannot be clicked — the cursor
+  belongs to the game during a run — so their animation is feedback that a
+  keypress landed, which is why two frames is enough and a long one would lag
+  behind a held key. The compass goes when the navigator arrives.
 
 - Location names: the internal biome enum does not match what players call
   places (`Swamp` is the fog and the Citadel; `Roots` is the forest). A mapping
