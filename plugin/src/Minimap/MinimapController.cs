@@ -1,41 +1,66 @@
+using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.UI;
+using Zorro.Core;
 
 namespace PeakMapInteractive.Minimap
 {
     /// <summary>
     /// A live top-down view of the mountain, in a small window inside the game.
     ///
-    /// This is the map the project was actually after. Every problem that made
-    /// an exported map fall short dissolves here: nothing has to be read out of
-    /// meshes the engine will not hand over, nothing has to be shipped, and no
-    /// shader has to be reproduced — the game draws its own world, so the view
-    /// is identical to the game by construction rather than by effort.
+    /// This is the map the project was actually after. Every wall the exported
+    /// map ran into disappears here: nothing has to be prised out of meshes the
+    /// engine refuses to hand over, no shader has to be reproduced, nothing is
+    /// shipped so nothing has a size budget, and fidelity is not approximated
+    /// because the game draws its own world.
     ///
-    /// It is built for route planning: north stays up so directions do not
-    /// swim while the player turns, and the camera can be lifted far above the
-    /// player to see what is coming rather than only what is underfoot.
+    /// It is built for route planning: north stays fixed upward so directions
+    /// do not swim while the player turns, and the view can be tilted to read
+    /// vertical relief, which on this mountain is most of the problem.
     /// </summary>
     internal sealed class MinimapController : MonoBehaviour
     {
         private const int Resolution = 512;
+        private const int MaxMarkers = 64;
+        private const float MarkerRefreshSeconds = 0.4f;
+
+        /// <summary>
+        /// Pitch presets. Straight down reads distance honestly; the tilted
+        /// ones show how much climbing is between here and there, which a
+        /// top-down view flattens away entirely.
+        /// </summary>
+        private static readonly float[] Pitches = { 90f, 75f, 45f };
 
         private Camera _camera;
         private RenderTexture _target;
         private Canvas _canvas;
-        private RawImage _image;
         private RectTransform _panel;
+        private RectTransform _playerMarker;
 
-        private bool _visible = true;
+        private readonly List<RectTransform> _markerPool = new List<RectTransform>();
+        private readonly List<MarkerSighting> _sightings = new List<MarkerSighting>();
+        private float _nextMarkerScan;
+
+        private bool _wanted = true;
+        private bool _shown;
         private float _span;
+        private int _pitchIndex;
+
+        private struct MarkerSighting
+        {
+            public Vector3 World;
+            public Color Colour;
+        }
 
         private void Awake()
         {
             _span = Plugin.Settings.MinimapSpan.Value;
             BuildCamera();
             BuildOverlay();
-            Apply();
+            Show(false);
         }
+
+        // --- construction ----------------------------------------------------
 
         private void BuildCamera()
         {
@@ -44,13 +69,11 @@ namespace PeakMapInteractive.Minimap
 
             _camera = holder.AddComponent<Camera>();
             _camera.orthographic = true;
-            _camera.transform.rotation = Quaternion.Euler(90f, 0f, 0f);
             _camera.clearFlags = CameraClearFlags.SolidColor;
             _camera.backgroundColor = new Color(0.04f, 0.05f, 0.07f, 1f);
             _camera.allowHDR = false;
             _camera.allowMSAA = false;
-            // Below every game camera, so it can never composite over the view.
-            _camera.depth = -50f;
+            _camera.depth = -50f;   // never composites over the player's view
             _camera.cullingMask = WorldMask();
 
             _target = new RenderTexture(Resolution, Resolution, 24, RenderTextureFormat.ARGB32)
@@ -64,9 +87,9 @@ namespace PeakMapInteractive.Minimap
         }
 
         /// <summary>
-        /// Ground and structures only. Weather, effects and the character
-        /// itself would sit between the camera and the terrain, and a map you
-        /// cannot see the ground through is not a map.
+        /// Ground and structures only. Weather and effects would hang between
+        /// the camera and the terrain, and a map you cannot see the ground
+        /// through is not a map.
         /// </summary>
         private static int WorldMask()
         {
@@ -87,95 +110,218 @@ namespace PeakMapInteractive.Minimap
 
             _canvas = canvasObject.AddComponent<Canvas>();
             _canvas.renderMode = RenderMode.ScreenSpaceOverlay;
-            // Above the game's HUD, which is what makes it a picture-in-picture
-            // rather than something hidden behind the interface.
-            _canvas.sortingOrder = 500;
-            canvasObject.AddComponent<UnityEngine.UI.CanvasScaler>();
+            _canvas.sortingOrder = 500;   // above the game's HUD
+            canvasObject.AddComponent<CanvasScaler>();
 
             var panelObject = new GameObject("Panel");
             panelObject.transform.SetParent(canvasObject.transform, worldPositionStays: false);
 
             _panel = panelObject.AddComponent<RectTransform>();
-            _panel.anchorMin = new Vector2(1f, 1f);
-            _panel.anchorMax = new Vector2(1f, 1f);
+            _panel.anchorMin = _panel.anchorMax = new Vector2(1f, 1f);
             _panel.pivot = new Vector2(1f, 1f);
             _panel.anchoredPosition = new Vector2(-16f, -16f);
 
             float size = Plugin.Settings.MinimapSize.Value;
             _panel.sizeDelta = new Vector2(size, size);
 
-            _image = panelObject.AddComponent<RawImage>();
-            _image.texture = _target;
-            _image.raycastTarget = false;
+            var image = panelObject.AddComponent<RawImage>();
+            image.texture = _target;
+            image.raycastTarget = false;
 
-            AddPlayerMarker(panelObject.transform);
+            _playerMarker = CreateDot(panelObject.transform, "You", new Color(1f, 0.55f, 0.2f), 10f);
         }
 
-        /// <summary>
-        /// The player sits dead centre because the camera follows them, so the
-        /// marker is a fixed dot rather than anything that needs projecting.
-        /// </summary>
-        private static void AddPlayerMarker(Transform parent)
+        private static RectTransform CreateDot(Transform parent, string name, Color colour, float size)
         {
-            var markerObject = new GameObject("You");
-            markerObject.transform.SetParent(parent, worldPositionStays: false);
+            var dot = new GameObject(name);
+            dot.transform.SetParent(parent, worldPositionStays: false);
 
-            var rect = markerObject.AddComponent<RectTransform>();
+            var rect = dot.AddComponent<RectTransform>();
             rect.anchorMin = rect.anchorMax = new Vector2(0.5f, 0.5f);
             rect.pivot = new Vector2(0.5f, 0.5f);
-            rect.anchoredPosition = Vector2.zero;
-            rect.sizeDelta = new Vector2(9f, 9f);
+            rect.sizeDelta = new Vector2(size, size);
 
-            var image = markerObject.AddComponent<Image>();
-            image.color = new Color(1f, 0.55f, 0.2f, 1f);
+            var image = dot.AddComponent<Image>();
+            image.color = colour;
             image.raycastTarget = false;
+
+            return rect;
         }
+
+        // --- lifecycle -------------------------------------------------------
 
         private void Update()
         {
-            if (Input.GetKeyDown(Plugin.Settings.MinimapToggleKey.Value))
-            {
-                _visible = !_visible;
-                Apply();
-            }
+            if (Input.GetKeyDown(Plugin.Settings.MinimapToggleKey.Value)) _wanted = !_wanted;
 
-            if (!_visible) return;
+            bool ready = _wanted && IsInPlay();
+            if (ready != _shown) Show(ready);
+            if (!ready) return;
 
             if (Input.GetKeyDown(Plugin.Settings.MinimapZoomInKey.Value)) SetSpan(_span * 0.7f);
             if (Input.GetKeyDown(Plugin.Settings.MinimapZoomOutKey.Value)) SetSpan(_span / 0.7f);
 
+            if (Input.GetKeyDown(Plugin.Settings.MinimapAngleKey.Value))
+                _pitchIndex = (_pitchIndex + 1) % Pitches.Length;
+
             Follow();
+            UpdateMarkers();
+        }
+
+        /// <summary>
+        /// True only once the player is standing in a real biome.
+        ///
+        /// The airport has no map to show, and opening on it looked broken.
+        /// The wake-up matters just as much: the run starts with the character
+        /// lying on the beach and the eyelid effect washing the screen out, and
+        /// the minimap was blinking along with it.
+        /// </summary>
+        private static bool IsInPlay()
+        {
+            if (LoadingScreenHandler.loading) return false;
+
+            Character player = Character.localCharacter;
+            if (player == null || player.data == null) return false;
+            if (player.data.passedOut || player.data.fullyPassedOut) return false;
+            if (player.data.passedOutOnTheBeach > 0f) return false;
+
+            // The airport scene has no MapHandler, which is the cleanest way to
+            // ask "am I on the mountain yet".
+            MapHandler map = Singleton<MapHandler>.Instance;
+            return map != null && map.segments != null && map.segments.Length > 0;
+        }
+
+        private void Show(bool shown)
+        {
+            _shown = shown;
+            if (_camera != null) _camera.enabled = shown;
+            if (_canvas != null) _canvas.enabled = shown;
         }
 
         private void SetSpan(float span)
         {
             _span = Mathf.Clamp(span, 20f, 2000f);
-            if (_camera != null) _camera.orthographicSize = _span * 0.5f;
         }
 
         /// <summary>
-        /// Keeps the camera directly above the player, high enough to see over
-        /// the terrain, with north fixed upward.
+        /// Places the camera above and behind the player at the chosen pitch,
+        /// aimed at them, with north fixed upward.
         /// </summary>
         private void Follow()
         {
             Character player = Character.localCharacter;
             if (player == null || _camera == null) return;
 
-            Vector3 position = player.Center;
+            float pitch = Pitches[_pitchIndex];
+            Vector3 focus = player.Center;
 
-            _camera.transform.position = new Vector3(position.x, position.y + 600f, position.z);
-            _camera.transform.rotation = Quaternion.Euler(90f, 0f, 0f);
+            Quaternion rotation = Quaternion.Euler(pitch, 0f, 0f);
+            // Far enough back that the near plane never clips the mountain,
+            // which an orthographic camera can afford for free.
+            Vector3 offset = rotation * Vector3.back * 1200f;
+
+            _camera.transform.SetPositionAndRotation(focus - offset, rotation);
             _camera.orthographicSize = _span * 0.5f;
             _camera.nearClipPlane = 1f;
-            // Deep enough to see the ground far below when hanging off a cliff.
-            _camera.farClipPlane = 3000f;
+            _camera.farClipPlane = 4000f;
         }
 
-        private void Apply()
+        // --- markers ---------------------------------------------------------
+
+        /// <summary>
+        /// Draws nearby chests, belltowers and the rest onto the view.
+        ///
+        /// Found by overlapping a sphere rather than by walking the scene:
+        /// only what is within the map's own range can be shown anyway, and a
+        /// full scan of a segment is tens of thousands of components.
+        /// </summary>
+        private void UpdateMarkers()
         {
-            if (_camera != null) _camera.enabled = _visible;
-            if (_canvas != null) _canvas.enabled = _visible;
+            if (Time.time >= _nextMarkerScan)
+            {
+                _nextMarkerScan = Time.time + MarkerRefreshSeconds;
+                ScanForMarkers();
+            }
+
+            int used = 0;
+
+            for (int i = 0; i < _sightings.Count && used < MaxMarkers; i++)
+            {
+                Vector3 viewport = _camera.WorldToViewportPoint(_sightings[i].World);
+                if (viewport.z <= 0f) continue;
+                if (viewport.x < 0f || viewport.x > 1f || viewport.y < 0f || viewport.y > 1f) continue;
+
+                RectTransform dot = MarkerAt(used++);
+                dot.gameObject.SetActive(true);
+                dot.GetComponent<Image>().color = _sightings[i].Colour;
+
+                Vector2 size = _panel.sizeDelta;
+                dot.anchoredPosition = new Vector2(
+                    (viewport.x - 0.5f) * size.x,
+                    (viewport.y - 0.5f) * size.y);
+            }
+
+            for (int i = used; i < _markerPool.Count; i++)
+                _markerPool[i].gameObject.SetActive(false);
+        }
+
+        private RectTransform MarkerAt(int index)
+        {
+            while (_markerPool.Count <= index)
+                _markerPool.Add(CreateDot(_panel, $"Marker{_markerPool.Count}", Color.white, 8f));
+
+            return _markerPool[index];
+        }
+
+        private void ScanForMarkers()
+        {
+            _sightings.Clear();
+
+            Character player = Character.localCharacter;
+            if (player == null) return;
+
+            Collider[] nearby = Physics.OverlapSphere(
+                player.Center, _span, ~0, QueryTriggerInteraction.Collide);
+
+            var seen = new HashSet<int>();
+
+            foreach (Collider collider in nearby)
+            {
+                if (collider == null) continue;
+
+                GameObject go = collider.gameObject;
+                if (!seen.Add(go.GetInstanceID())) continue;
+
+                if (!TryClassify(go, out Color colour)) continue;
+
+                _sightings.Add(new MarkerSighting { World = go.transform.position, Colour = colour });
+                if (_sightings.Count >= MaxMarkers) return;
+            }
+        }
+
+        /// <summary>
+        /// Recognises the things worth walking towards, by the same names the
+        /// export uses, so both halves of the project agree on what counts.
+        /// </summary>
+        private static bool TryClassify(GameObject go, out Color colour)
+        {
+            string name = go.name.ToLowerInvariant();
+
+            if (name.Contains("spawner") || name.Contains("sfx") || name.Contains("trigger"))
+            {
+                colour = default;
+                return false;
+            }
+
+            if (name.Contains("luggage")) { colour = new Color(1f, 0.72f, 0.25f); return true; }
+            if (name.Contains("bell")) { colour = new Color(0.72f, 0.45f, 1f); return true; }
+            if (name.Contains("amulet")) { colour = new Color(0.3f, 1f, 0.55f); return true; }
+            if (name.Contains("campfire")) { colour = new Color(1f, 0.45f, 0.2f); return true; }
+            if (name.Contains("tomb")) { colour = new Color(0.7f, 0.75f, 0.8f); return true; }
+            if (name.Contains("statue")) { colour = new Color(0.6f, 0.6f, 0.65f); return true; }
+
+            colour = default;
+            return false;
         }
 
         private void OnDestroy()

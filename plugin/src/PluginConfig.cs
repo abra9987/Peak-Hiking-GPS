@@ -30,6 +30,7 @@ namespace PeakMapInteractive
         public readonly ConfigEntry<UnityEngine.KeyCode> MinimapToggleKey;
         public readonly ConfigEntry<UnityEngine.KeyCode> MinimapZoomInKey;
         public readonly ConfigEntry<UnityEngine.KeyCode> MinimapZoomOutKey;
+        public readonly ConfigEntry<UnityEngine.KeyCode> MinimapAngleKey;
 
         public PluginConfig(ConfigFile cfg)
         {
@@ -122,6 +123,12 @@ namespace PeakMapInteractive
             MinimapToggleKey = cfg.Bind("Minimap", "ToggleKey", UnityEngine.KeyCode.M, "Shows or hides the map.");
             MinimapZoomInKey = cfg.Bind("Minimap", "ZoomInKey", UnityEngine.KeyCode.Equals, "Zooms in.");
             MinimapZoomOutKey = cfg.Bind("Minimap", "ZoomOutKey", UnityEngine.KeyCode.Minus, "Zooms out.");
+
+            MinimapAngleKey = cfg.Bind(
+                "Minimap", "AngleKey", UnityEngine.KeyCode.N,
+                "Cycles the viewing angle: straight down, 75 degrees, 45 degrees. " +
+                "A tilted view shows how much climbing lies between you and somewhere, " +
+                "which looking straight down flattens away.");
 
             WriteDiagnostics = cfg.Bind(
                 "Debug", "WriteDiagnostics", false,
