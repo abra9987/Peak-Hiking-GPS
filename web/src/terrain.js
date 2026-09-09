@@ -7,7 +7,7 @@ import * as THREE from 'three';
  * captured with holes shows holes, instead of inventing a floor that does not
  * exist in the game.
  */
-export function buildTerrainMesh(terrain, heights, mask, texture) {
+export function buildTerrainMesh(terrain, heights, mask, texture, groundColors = null) {
   const { width, depth, origin, size } = terrain;
   const stepX = size[0] / width;
   const stepZ = size[1] / depth;
@@ -49,10 +49,14 @@ export function buildTerrainMesh(terrain, heights, mask, texture) {
   // suits a climbing game better than a photograph would, since height is the
   // thing the player is actually reasoning about.
   if (!texture) {
-    geometry.setAttribute(
-      'color',
-      new THREE.BufferAttribute(elevationColours(heights, mask, terrain), 3),
-    );
+    // Real ground colours when the capture has them. The altitude ramp below
+    // is a guess by comparison, and guessing what the game looks like is
+    // exactly what makes a map feel wrong.
+    const colours = groundColors
+      ? unpackGroundColours(groundColors, heights.length)
+      : elevationColours(heights, mask, terrain);
+
+    geometry.setAttribute('color', new THREE.BufferAttribute(colours, 3));
   }
 
   geometry.computeVertexNormals();
@@ -75,7 +79,23 @@ export function buildTerrainMesh(terrain, heights, mask, texture) {
 }
 
 /**
- * Altitude ramp: wet sand at sea level through vegetation and rock to snow.
+ * Captured colours are display-referred; Three.js works in linear light.
+ * Feeding bytes straight through leaves everything looking washed out and
+ * chalky, which is what made sand read as pale grey.
+ */
+function unpackGroundColours(bytes, count) {
+  const colours = new Float32Array(count * 3);
+  for (let i = 0; i < count * 3; i++) colours[i] = srgbToLinear(bytes[i] / 255);
+  return colours;
+}
+
+function srgbToLinear(c) {
+  return c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
+}
+
+/**
+ * Altitude ramp, used only when a snapshot carries no ground colours: wet sand
+ * at sea level through vegetation and rock to snow.
  *
  * Stops are placed on the segment's own range rather than an absolute scale,
  * so a 300 m shore and a 1300 m summit both use the full ramp and stay

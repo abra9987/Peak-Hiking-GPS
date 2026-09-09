@@ -16,6 +16,12 @@ namespace PeakMapInteractive
         public readonly ConfigEntry<int> AlbedoResolution;
         public readonly ConfigEntry<float> BoundsPadding;
         public readonly ConfigEntry<bool> WriteDiagnostics;
+        public readonly ConfigEntry<bool> ExportMeshes;
+        public readonly ConfigEntry<float> MeshMinSize;
+        public readonly ConfigEntry<int> MeshTriangleBudget;
+        public readonly ConfigEntry<int> MeshLodLevel;
+        public readonly ConfigEntry<int> MeshOnlySegment;
+        public readonly ConfigEntry<bool> MeshIncludeFoliage;
         public readonly ConfigEntry<UnityEngine.KeyCode> CaptureHotkey;
 
         public PluginConfig(ConfigFile cfg)
@@ -59,6 +65,37 @@ namespace PeakMapInteractive
                 "Capture", "BoundsPadding", 25f,
                 "Extra world units added around a segment's computed bounds, so geometry " +
                 "at the very edge is not clipped.");
+
+            ExportMeshes = cfg.Bind(
+                "Mesh", "ExportMeshes", true,
+                "Export the segment's real geometry, so caves and overhangs survive. " +
+                "A heightfield cannot represent them at all.");
+
+            MeshMinSize = cfg.Bind(
+                "Mesh", "MinSize", 10f,
+                "Smallest world-space extent a loose mesh must have to be exported. " +
+                "Drops thousands of pebbles and keeps terrain and landmarks.");
+
+            MeshTriangleBudget = cfg.Bind(
+                "Mesh", "TriangleBudget", 2000000,
+                "Triangles per segment. Largest objects are exported first, so a tight " +
+                "budget still yields the landmarks.");
+
+            MeshLodLevel = cfg.Bind(
+                "Mesh", "LodLevel", 0,
+                "Which LOD to export: 0 is the detail the player sees up close. " +
+                "The coarsest level is what a game draws at a distance and looks like " +
+                "cheap low-poly when a map lets you zoom in on it.");
+
+            MeshOnlySegment = cfg.Bind(
+                "Mesh", "OnlySegment", -1,
+                "Export geometry for this segment only (-1 for all). Set it while dialling " +
+                "one biome in: a full capture is six times the wait per iteration.");
+
+            MeshIncludeFoliage = cfg.Bind(
+                "Mesh", "IncludeFoliage", false,
+                "Include grass, vines and leaves. They are most of the triangle count and " +
+                "little of the map, but a faithful reproduction needs them.");
 
             WriteDiagnostics = cfg.Bind(
                 "Debug", "WriteDiagnostics", false,

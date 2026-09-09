@@ -76,6 +76,12 @@ namespace PeakMapInteractive
 
             if (Pipeline.CaptureRunner.IsRunning) return;
 
+            // Must run before the world is drawn: once a mesh is uploaded, its
+            // index buffer can no longer be made readable, and the terrain
+            // shells are exactly the meshes that would be lost.
+            if (Settings.ExportMeshes.Value && !Pipeline.CaptureRunner.HasCompleted)
+                Capture.MeshPrimer.Tick();
+
             if (Input.GetKeyDown(Settings.CaptureHotkey.Value))
             {
                 Logger.LogInfo("Capture hotkey pressed.");
@@ -101,7 +107,17 @@ namespace PeakMapInteractive
         private static bool IsMapReady()
         {
             if (LoadingScreenHandler.loading) return false;
-            if (Character.localCharacter == null) return false;
+
+            Character player = Character.localCharacter;
+            if (player == null) return false;
+
+            // The run opens with the character lying on the beach, eyes
+            // closed, and the eyelid effect washes the screen white until it
+            // finishes. Photographing through it produced a picture of the
+            // inside of an eyelid rather than a mountain.
+            if (player.data == null) return false;
+            if (player.data.passedOut || player.data.fullyPassedOut) return false;
+            if (player.data.passedOutOnTheBeach > 0f) return false;
 
             var handler = Zorro.Core.Singleton<MapHandler>.Instance;
             return handler?.segments != null

@@ -3,6 +3,7 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
 import { loadSnapshot, loadHeightfield } from './loader.js';
 import { buildTerrainMesh } from './terrain.js';
+import { loadSegmentMesh } from './mesh.js';
 import { buildMarkers } from './markers.js';
 import { describe } from './taxonomy.js';
 import { createUI } from './ui.js';
@@ -33,8 +34,10 @@ controls.screenSpacePanning = false;
 
 // A hemisphere light keeps shaded slopes readable; a single directional light
 // gives the relief enough shading to be read as relief at all.
-scene.add(new THREE.HemisphereLight(0xbfd4ff, 0x30281f, 1.5));
-const sun = new THREE.DirectionalLight(0xfff2e0, 2.0);
+// Kept modest on purpose: the vertex colours already carry the game's own
+// albedo, so strong lighting only bleaches them.
+scene.add(new THREE.HemisphereLight(0xbfd4ff, 0x2a2620, 0.65));
+const sun = new THREE.DirectionalLight(0xfff2e0, 1.15);
 sun.position.set(-0.6, 1.0, 0.45).normalize();
 scene.add(sun);
 
@@ -83,15 +86,31 @@ async function loadSegment(index) {
   disposeSegment();
   state.segmentIndex = index;
 
-  // albedo is optional: a segment whose orthophoto could not be captured is
-  // shaded from its own heightfield instead.
-  const [{ heights, mask }, texture] = await Promise.all([
-    loadHeightfield(DATA_URL, segment.terrain),
-    segment.albedo ? loadTexture(`${DATA_URL}/${segment.albedo.file}`) : Promise.resolve(null),
-  ]);
+  // Both layers, not one or the other.
+  //
+  // The ground is the surface the player walks on and is most of what a map
+  // is for; it comes from the sampled heightfield, coloured by the material
+  // each ray landed on. The exported game meshes sit on top and carry what a
+  // heightfield cannot hold: rock faces, overhangs and caves.
+  state.layers = new THREE.Group();
+  state.layers.name = 'segment';
 
-  state.terrainMesh = buildTerrainMesh(segment.terrain, heights, mask, texture);
-  scene.add(state.terrainMesh);
+  const { heights, mask, colors } = await loadHeightfield(DATA_URL, segment.terrain);
+  const ground = buildTerrainMesh(segment.terrain, heights, mask, null, colors);
+  ground.name = 'ground';
+  state.layers.add(ground);
+
+  if (segment.mesh) {
+    try {
+      state.layers.add(await loadSegmentMesh(DATA_URL, segment.mesh));
+    } catch (error) {
+      // Losing the detail layer is survivable; losing the ground is not.
+      console.warn('Segment mesh failed to load:', error);
+    }
+  }
+
+  state.terrainMesh = state.layers;
+  scene.add(state.layers);
 
   const { group, byKind } = buildMarkers(segment.markers);
   state.markerGroup = group;
@@ -144,9 +163,12 @@ function frameCamera(segment) {
 function disposeSegment() {
   if (state.terrainMesh) {
     scene.remove(state.terrainMesh);
-    state.terrainMesh.geometry.dispose();
-    state.terrainMesh.material.map?.dispose();
-    state.terrainMesh.material.dispose();
+    state.terrainMesh.traverse((object) => {
+      if (!object.isMesh) return;
+      object.geometry.dispose();
+      object.material.map?.dispose();
+      object.material.dispose();
+    });
     state.terrainMesh = null;
   }
 

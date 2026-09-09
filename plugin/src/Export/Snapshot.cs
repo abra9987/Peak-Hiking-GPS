@@ -65,6 +65,7 @@ namespace PeakMapInteractive.Export
         [JsonProperty("bounds")] public BoundsDto Bounds;
         [JsonProperty("terrain")] public TerrainDto Terrain;
         [JsonProperty("albedo")] public AlbedoDto Albedo;
+        [JsonProperty("mesh")] public MeshDto Mesh;
         [JsonProperty("markers")] public List<MarkerDto> Markers = new List<MarkerDto>();
     }
 
@@ -84,6 +85,13 @@ namespace PeakMapInteractive.Export
         [JsonProperty("heightMin")] public float HeightMin;
         [JsonProperty("heightMax")] public float HeightMax;
         [JsonProperty("coverage")] public float Coverage;
+
+        /// <summary>
+        /// Ground colours, one RGB triple per sample. This is the surface the
+        /// player walks on — sand on the shore, snow above — taken from the
+        /// material each ray landed on rather than invented.
+        /// </summary>
+        [JsonProperty("colorFile")] public string ColorFile;
     }
 
     public sealed class AlbedoDto
@@ -92,6 +100,21 @@ namespace PeakMapInteractive.Export
         [JsonProperty("resolution")] public int Resolution;
         [JsonProperty("origin")] public float[] Origin;
         [JsonProperty("size")] public float[] Size;
+    }
+
+    /// <summary>
+    /// The segment's real geometry: the triangles the game draws, in world
+    /// space, coloured by the vertex data its terrain shaders read.
+    /// Present alongside the heightfield, which is cheaper but cannot hold a
+    /// cave or an overhang.
+    /// </summary>
+    public sealed class MeshDto
+    {
+        [JsonProperty("file")] public string File;
+        [JsonProperty("vertexCount")] public int VertexCount;
+        [JsonProperty("triangleCount")] public int TriangleCount;
+        [JsonProperty("meshCount")] public int MeshCount;
+        [JsonProperty("hasColors")] public bool HasColors;
     }
 
     public sealed class MarkerDto

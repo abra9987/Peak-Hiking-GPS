@@ -16,6 +16,17 @@ namespace PeakMapInteractive.Capture
         public float Min = float.PositiveInfinity;
         public float Max = float.NegativeInfinity;
         public float Coverage;    // fraction of samples that hit geometry
+
+        /// <summary>
+        /// Ground colour per sample, taken from the material the ray landed on.
+        ///
+        /// In PEAK the walkable surface is the "top" layer of the terrain
+        /// shader — sand on the shore, snow higher up — laid over whatever rock
+        /// is underneath. A downward ray lands on exactly that surface, so
+        /// reading the material's top colour where it lands reproduces the
+        /// ground the player actually walks on.
+        /// </summary>
+        public Color32[] Colors;
     }
 
     /// <summary>
@@ -151,6 +162,50 @@ namespace PeakMapInteractive.Capture
             return string.Join("/", parts);
         }
 
+        /// <summary>
+        /// Maps every collider to the ground colour of its material.
+        ///
+        /// Built once per segment: a batched raycast reports only a collider
+        /// id, and looking the managed object up a million times would cost far
+        /// more than the whole sampling pass.
+        /// </summary>
+        private static Dictionary<int, Color32> MapColliderColors()
+        {
+            var map = new Dictionary<int, Color32>();
+
+            foreach (Collider collider in UnityEngine.Object.FindObjectsByType<Collider>(
+                         FindObjectsInactive.Exclude, FindObjectsSortMode.None))
+            {
+                if (collider == null) continue;
+
+                // The renderer is not reliably on the collider's own object:
+                // terrain chunks often hang the collider off a child or share
+                // one with a parent. Looking only at the same GameObject left
+                // most of the ground grey.
+                Renderer renderer = collider.GetComponent<Renderer>()
+                                    ?? collider.GetComponentInParent<Renderer>()
+                                    ?? collider.GetComponentInChildren<Renderer>();
+
+                Material material = renderer != null ? renderer.sharedMaterial : null;
+                if (material == null) continue;
+
+                Color colour;
+                if (material.HasProperty("_TopColor")) colour = material.GetColor("_TopColor");
+                else if (material.HasProperty("_BaseColor")) colour = material.GetColor("_BaseColor");
+                else continue;
+
+                if (material.HasProperty("_Tint")) colour *= material.GetColor("_Tint");
+
+                map[collider.GetInstanceID()] = new Color32(
+                    (byte)(Mathf.Clamp01(colour.r) * 255f),
+                    (byte)(Mathf.Clamp01(colour.g) * 255f),
+                    (byte)(Mathf.Clamp01(colour.b) * 255f),
+                    255);
+            }
+
+            return map;
+        }
+
         public static Heightfield Sample(CaptureFrame frame, int resolution, int layerMask)
         {
             var field = new Heightfield
@@ -158,10 +213,12 @@ namespace PeakMapInteractive.Capture
                 Width = resolution,
                 Depth = resolution,
                 Heights = new float[resolution * resolution],
-                Hit = new bool[resolution * resolution]
+                Hit = new bool[resolution * resolution],
+                Colors = new Color32[resolution * resolution]
             };
 
             HashSet<int> ignored = FindSpanningPlanes(frame);
+            Dictionary<int, Color32> groundColors = MapColliderColors();
 
             // Sample at cell centres so the field is symmetric about the frame.
             float stepX = frame.SizeX / resolution;
@@ -222,6 +279,9 @@ namespace PeakMapInteractive.Capture
 
                         field.Heights[index] = y;
                         field.Hit[index] = true;
+                        field.Colors[index] = groundColors.TryGetValue(hit.colliderInstanceID, out Color32 ground)
+                            ? ground
+                            : new Color32(150, 150, 150, 255);
                         if (y < field.Min) field.Min = y;
                         if (y > field.Max) field.Max = y;
                         hits++;

@@ -71,7 +71,25 @@ export async function loadHeightfield(baseUrl, terrain) {
     heights[i] = terrain.heightMin + ((v - 1) / 65534) * span;
   }
 
-  return { heights, mask };
+  const colors = await loadGroundColors(baseUrl, terrain, expected);
+  return { heights, mask, colors };
+}
+
+/**
+ * Ground colours, one RGB triple per height sample.
+ *
+ * This is the surface the player actually walks on, taken from the material
+ * each sampling ray landed on: sand on the shore, snow higher up. Absent in
+ * older snapshots, in which case the caller falls back to shading by altitude.
+ */
+async function loadGroundColors(baseUrl, terrain, expected) {
+  if (!terrain.colorFile) return null;
+
+  const response = await fetch(`${baseUrl}/${terrain.colorFile}`, { cache: 'no-cache' });
+  if (!response.ok) return null;
+
+  const bytes = new Uint8Array(await response.arrayBuffer());
+  return bytes.length === expected * 3 ? bytes : null;
 }
 
 /**

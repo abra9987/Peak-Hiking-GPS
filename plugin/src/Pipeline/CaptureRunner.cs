@@ -161,7 +161,10 @@ namespace PeakMapInteractive.Pipeline
                     Max = SnapshotWriter.Vec3(frame.Max)
                 };
 
-                MeshSurvey.Survey(preparer.Root, index, dto.Biome);
+                // One segment's worth of shader detail is enough to work from,
+                // and six would bury the log.
+                if (index == 0 && Plugin.Settings.WriteDiagnostics.Value)
+                    MeshSurvey.Survey(preparer.Root, index, dto.Biome);
 
                 // --- Heightfield ---------------------------------------------
                 Heightfield field = TerrainSampler.Sample(frame, heightRes, layerMask);
@@ -170,9 +173,14 @@ namespace PeakMapInteractive.Pipeline
                     Path.Combine(snapshotDir, heightFile),
                     field.Heights, field.Hit, field.Min, field.Max);
 
+                string groundFile = $"segment_{index}.ground.bin";
+                SnapshotWriter.WriteGroundColors(
+                    Path.Combine(snapshotDir, groundFile), field.Colors, field.Hit);
+
                 dto.Terrain = new TerrainDto
                 {
                     File = heightFile,
+                    ColorFile = groundFile,
                     Width = field.Width,
                     Depth = field.Depth,
                     Origin = SnapshotWriter.Vec2(frame.OriginX, frame.OriginZ),
@@ -190,21 +198,18 @@ namespace PeakMapInteractive.Pipeline
                 string albedoFile = $"segment_{index}.albedo.jpg";
                 bool albedoWritten = false;
 
-                yield return OrthoCapture.Capture(frame, albedoRes, ~0, texture =>
-                {
-                    // null means the capture produced nothing worth keeping.
-                    if (texture == null) return;
+                // The photograph is kept rather than written and dropped: the
+                // mesh export samples it for vertex colour, which is how the
+                // model ends up looking like the game rather than like a
+                // guess.
+                Texture2D albedoTexture = null;
+                yield return OrthoCapture.Capture(frame, albedoRes, ~0, t => albedoTexture = t);
 
-                    try
-                    {
-                        SnapshotWriter.WriteAlbedo(Path.Combine(snapshotDir, albedoFile), texture);
-                        albedoWritten = true;
-                    }
-                    finally
-                    {
-                        UnityEngine.Object.Destroy(texture);
-                    }
-                });
+                if (albedoTexture != null)
+                {
+                    SnapshotWriter.WriteAlbedo(Path.Combine(snapshotDir, albedoFile), albedoTexture);
+                    albedoWritten = true;
+                }
 
                 // The orthophoto is optional. Terrain shape, altitudes and
                 // markers are the substance; colour is decoration the client
@@ -218,6 +223,43 @@ namespace PeakMapInteractive.Pipeline
                         Size = SnapshotWriter.Vec2(frame.SizeX, frame.SizeZ)
                     }
                     : null;
+
+                // --- Real geometry -------------------------------------------
+                int onlySegment = Plugin.Settings.MeshOnlySegment.Value;
+                if (Plugin.Settings.ExportMeshes.Value && (onlySegment < 0 || onlySegment == index))
+                {
+                    string meshFile = $"segment_{index}.mesh.bin";
+                    MeshExportResult exported = MeshExporter.Export(
+                        preparer.Root,
+                        Path.Combine(snapshotDir, meshFile),
+                        Plugin.Settings.MeshMinSize.Value,
+                        Plugin.Settings.MeshTriangleBudget.Value,
+                        Plugin.Settings.MeshLodLevel.Value,
+                        Plugin.Settings.MeshIncludeFoliage.Value);
+
+                    if (exported.TriangleCount > 0)
+                    {
+                        dto.Mesh = new MeshDto
+                        {
+                            File = meshFile,
+                            VertexCount = exported.VertexCount,
+                            TriangleCount = exported.TriangleCount,
+                            MeshCount = exported.MeshCount,
+                            HasColors = exported.HasColors
+                        };
+
+                        Plugin.Logger.LogInfo(
+                            $"  mesh: {exported.TriangleCount / 1000}k tris from {exported.MeshCount} objects, " +
+                            $"{exported.VertexCount / 1000}k verts, colours={exported.HasColors}, " +
+                            $"{exported.SkippedCount} skipped");
+                    }
+                    else
+                    {
+                        Plugin.Logger.LogWarning("  mesh export produced nothing.");
+                    }
+                }
+
+                if (albedoTexture != null) UnityEngine.Object.Destroy(albedoTexture);
 
                 // --- Markers -------------------------------------------------
                 dto.Markers = collector.Collect(preparer.Root, index);

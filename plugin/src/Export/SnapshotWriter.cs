@@ -39,6 +39,26 @@ namespace PeakMapInteractive.Export
             File.WriteAllBytes(path, buffer);
         }
 
+        /// <summary>
+        /// Writes the ground colour grid: three bytes per heightfield sample,
+        /// same order as the heights. Black marks a sample with no ground.
+        /// </summary>
+        public static void WriteGroundColors(string path, UnityEngine.Color32[] colors, bool[] hit)
+        {
+            var buffer = new byte[colors.Length * 3];
+
+            for (int i = 0; i < colors.Length; i++)
+            {
+                if (!hit[i]) continue;
+
+                buffer[i * 3] = colors[i].r;
+                buffer[i * 3 + 1] = colors[i].g;
+                buffer[i * 3 + 2] = colors[i].b;
+            }
+
+            File.WriteAllBytes(path, buffer);
+        }
+
         /// <summary>Writes a captured orthophoto as JPEG.</summary>
         public static void WriteAlbedo(string path, Texture2D texture, int quality = 92)
         {

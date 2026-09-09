@@ -1,20 +1,27 @@
 using System.Collections.Generic;
+using System.Linq;
 using UnityEngine;
+using UnityEngine.Rendering;
 
 namespace PeakMapInteractive.Capture
 {
     /// <summary>
-    /// Measures what it would take to export a segment's real geometry and
-    /// materials, instead of a heightfield with a photo draped over it.
+    /// Establishes whether the segment's real geometry can be exported, and at
+    /// what size.
     ///
     /// A heightfield stores one altitude per XZ, so it cannot represent a cave,
-    /// an overhang or a tunnel at all — the exact features that make PEAK worth
-    /// mapping in three dimensions. Exporting meshes keeps them.
+    /// an overhang or a tunnel — exactly the features that make PEAK worth
+    /// mapping in three dimensions. Exporting meshes keeps them, and this
+    /// measures the three things that decide whether that is practical:
     ///
-    /// Two things decide whether that is possible in a shipped build:
-    /// meshes marked Read/Write Disabled cannot be read from script at all, and
-    /// the total triangle count decides whether the result can be delivered to
-    /// a browser. This reports both before any exporter is written.
+    ///  - size, counted at the *lowest* LOD rather than the one the player
+    ///    sees, because 84M triangles at LOD0 says nothing about what a browser
+    ///    would actually be sent;
+    ///  - readability, including whether the vertex buffer can be reached for
+    ///    meshes marked Read/Write Disabled, which the mesh API refuses;
+    ///  - colour, since the terrain has no base texture and is shaded from
+    ///    vertex data by custom triplanar shaders. If that data is on the mesh
+    ///    it can be exported; if it is only in shader properties, those can.
     /// </summary>
     internal static class MeshSurvey
     {
@@ -22,75 +29,185 @@ namespace PeakMapInteractive.Capture
         {
             if (segmentRoot == null) return;
 
-            var filters = segmentRoot.GetComponentsInChildren<MeshFilter>(includeInactive: false);
+            SurveyLods(segmentRoot, index, biome);
+            SurveyVertexData(segmentRoot);
+            SurveyTerrainMaterials(segmentRoot);
+        }
 
-            int readable = 0;
-            int unreadable = 0;
-            long vertices = 0;
-            long triangles = 0;
+        /// <summary>Triangle budget at the finest and coarsest LOD.</summary>
+        private static void SurveyLods(GameObject root, int index, string biome)
+        {
+            var groups = root.GetComponentsInChildren<LODGroup>(includeInactive: false);
 
-            var materials = new HashSet<string>();
-            var textures = new HashSet<string>();
-            var shaders = new HashSet<string>();
-            var unreadableExamples = new List<string>();
+            long finest = 0;
+            long coarsest = 0;
+            int meshesInGroups = 0;
 
-            for (int i = 0; i < filters.Length; i++)
+            foreach (LODGroup group in groups)
             {
-                MeshFilter filter = filters[i];
-                Mesh mesh = filter != null ? filter.sharedMesh : null;
-                if (mesh == null) continue;
+                LOD[] lods = group.GetLODs();
+                if (lods.Length == 0) continue;
 
-                if (mesh.isReadable)
-                {
-                    readable++;
-                    vertices += mesh.vertexCount;
-                    triangles += mesh.triangles.Length / 3;
-                }
-                else
-                {
-                    unreadable++;
-                    vertices += mesh.vertexCount; // still reported by the mesh
-                    if (unreadableExamples.Count < 5) unreadableExamples.Add(mesh.name);
-                }
+                finest += TriangleCount(lods[0].renderers, ref meshesInGroups);
+                int dummy = 0;
+                coarsest += TriangleCount(lods[lods.Length - 1].renderers, ref dummy);
+            }
 
+            // Anything not under a LOD group is shipped as-is at every quality.
+            var inGroups = new HashSet<Renderer>();
+            foreach (LODGroup group in groups)
+                foreach (LOD lod in group.GetLODs())
+                    foreach (Renderer r in lod.renderers)
+                        if (r != null) inGroups.Add(r);
+
+            long loose = 0;
+            int looseCount = 0;
+            foreach (MeshFilter filter in root.GetComponentsInChildren<MeshFilter>(false))
+            {
                 Renderer renderer = filter.GetComponent<Renderer>();
-                if (renderer == null) continue;
+                if (renderer == null || inGroups.Contains(renderer)) continue;
+                if (filter.sharedMesh == null) continue;
 
-                foreach (Material material in renderer.sharedMaterials)
-                {
-                    if (material == null) continue;
-
-                    materials.Add(material.name);
-                    if (material.shader != null) shaders.Add(material.shader.name);
-
-                    if (material.HasProperty("_BaseMap") && material.GetTexture("_BaseMap") is Texture baseMap)
-                        textures.Add($"{baseMap.name}:{baseMap.width}x{baseMap.height}");
-                    else if (material.HasProperty("_MainTex") && material.GetTexture("_MainTex") is Texture mainTex)
-                        textures.Add($"{mainTex.name}:{mainTex.width}x{mainTex.height}");
-                }
+                loose += EstimateTriangles(filter.sharedMesh);
+                looseCount++;
             }
 
             Plugin.Logger.LogInfo(
-                $"  mesh survey [{index} {biome}]: {filters.Length} filters, " +
-                $"{readable} readable / {unreadable} not, " +
-                $"~{vertices / 1000}k verts, {triangles / 1000}k tris (readable only), " +
-                $"{materials.Count} materials, {shaders.Count} shaders, {textures.Count} base textures");
+                $"  LOD survey [{index} {biome}]: {groups.Length} LOD groups " +
+                $"(finest {finest / 1000}k tris, coarsest {coarsest / 1000}k tris), " +
+                $"{looseCount} un-grouped meshes at {loose / 1000}k tris. " +
+                $"Coarsest total: {(coarsest + loose) / 1000}k tris.");
+        }
 
-            if (unreadableExamples.Count > 0)
-                Plugin.Logger.LogInfo("    unreadable examples: " + string.Join(", ", unreadableExamples));
+        private static long TriangleCount(Renderer[] renderers, ref int meshes)
+        {
+            long total = 0;
 
-            int shown = 0;
-            foreach (string shader in shaders)
+            foreach (Renderer renderer in renderers)
             {
-                Plugin.Logger.LogInfo("    shader: " + shader);
-                if (++shown >= 6) break;
+                if (renderer == null) continue;
+
+                MeshFilter filter = renderer.GetComponent<MeshFilter>();
+                if (filter == null || filter.sharedMesh == null) continue;
+
+                total += EstimateTriangles(filter.sharedMesh);
+                meshes++;
             }
 
-            shown = 0;
-            foreach (string texture in textures)
+            return total;
+        }
+
+        /// <summary>
+        /// Index count works without the mesh being readable, so this counts
+        /// unreadable terrain too.
+        /// </summary>
+        private static long EstimateTriangles(Mesh mesh)
+        {
+            long indices = 0;
+            for (int i = 0; i < mesh.subMeshCount; i++)
+                indices += (long)mesh.GetIndexCount(i);
+
+            return indices / 3;
+        }
+
+        /// <summary>
+        /// What the mesh actually carries, and whether an unreadable one can
+        /// still be reached through its GPU buffers.
+        /// </summary>
+        private static void SurveyVertexData(GameObject root)
+        {
+            Mesh sample = null;
+
+            foreach (MeshFilter filter in root.GetComponentsInChildren<MeshFilter>(false))
             {
-                Plugin.Logger.LogInfo("    texture: " + texture);
-                if (++shown >= 8) break;
+                Mesh mesh = filter.sharedMesh;
+                if (mesh == null || mesh.isReadable) continue;
+                if (mesh.vertexCount < 5000) continue; // want a terrain shell, not a pebble
+
+                sample = mesh;
+                break;
+            }
+
+            if (sample == null)
+            {
+                Plugin.Logger.LogInfo("  no large unreadable mesh found to probe.");
+                return;
+            }
+
+            var attributes = sample.GetVertexAttributes()
+                .Select(a => $"{a.attribute}:{a.format}x{a.dimension}")
+                .ToArray();
+
+            Plugin.Logger.LogInfo(
+                $"  unreadable sample '{sample.name}': {sample.vertexCount} verts, " +
+                $"attributes = {string.Join(", ", attributes)}");
+
+            // The decisive question: can the vertices be read anyway?
+            try
+            {
+                sample.vertexBufferTarget |= GraphicsBuffer.Target.Raw;
+                using (GraphicsBuffer buffer = sample.GetVertexBuffer(0))
+                {
+                    Plugin.Logger.LogInfo(buffer == null
+                        ? "  GPU vertex buffer: NOT AVAILABLE"
+                        : $"  GPU vertex buffer: available, {buffer.count} elements x {buffer.stride} bytes");
+                }
+            }
+            catch (System.Exception e)
+            {
+                Plugin.Logger.LogWarning($"  GPU vertex buffer unavailable: {e.Message}");
+            }
+        }
+
+        /// <summary>
+        /// Colour lives in shader properties when it is not in a texture.
+        /// Dumps what the terrain materials actually hold.
+        /// </summary>
+        private static void SurveyTerrainMaterials(GameObject root)
+        {
+            var reported = new HashSet<string>();
+
+            foreach (Renderer renderer in root.GetComponentsInChildren<Renderer>(false))
+            {
+                Material material = renderer.sharedMaterial;
+                if (material == null || material.shader == null) continue;
+
+                string shader = material.shader.name;
+                if (shader != "W/Peak_Rock" && shader != "W/Peak_Standard") continue;
+                if (!reported.Add(material.name)) continue;
+
+                // Enumerate what the shader actually exposes rather than
+                // guessing property names. Vertex colours turned out to be
+                // splat weights, not colour, so the real colours have to come
+                // from somewhere — and this says where.
+                var parts = new List<string>();
+                int count = material.shader.GetPropertyCount();
+
+                for (int p = 0; p < count; p++)
+                {
+                    string name = material.shader.GetPropertyName(p);
+                    UnityEngine.Rendering.ShaderPropertyType type = material.shader.GetPropertyType(p);
+
+                    switch (type)
+                    {
+                        case UnityEngine.Rendering.ShaderPropertyType.Color:
+                            parts.Add($"{name}={ColorUtility.ToHtmlStringRGB(material.GetColor(name))}");
+                            break;
+                        case UnityEngine.Rendering.ShaderPropertyType.Texture:
+                            Texture t = material.GetTexture(name);
+                            if (t != null) parts.Add($"{name}=tex:{t.name}");
+                            break;
+                        case UnityEngine.Rendering.ShaderPropertyType.Float:
+                        case UnityEngine.Rendering.ShaderPropertyType.Range:
+                            parts.Add($"{name}={material.GetFloat(name):F2}");
+                            break;
+                    }
+                }
+
+                Plugin.Logger.LogInfo($"  material '{material.name}' ({shader}):");
+                foreach (string part in parts) Plugin.Logger.LogInfo($"      {part}");
+
+                if (reported.Count >= 4) return;
             }
         }
     }
