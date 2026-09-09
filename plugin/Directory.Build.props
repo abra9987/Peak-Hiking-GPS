@@ -1,0 +1,39 @@
+<Project>
+
+  <!--
+    Locates the PEAK installation so the project can reference the game's
+    managed assemblies without copying copyrighted DLLs into the repository.
+
+    Override with an environment variable or /p:PeakDir=... if your library
+    lives somewhere the probe below does not cover.
+  -->
+  <PropertyGroup>
+    <PeakDir Condition="'$(PeakDir)' == '' AND '$(PEAK_DIR)' != ''">$(PEAK_DIR)</PeakDir>
+  </PropertyGroup>
+
+  <!-- Common Steam library roots, first hit wins. -->
+  <PropertyGroup Condition="'$(PeakDir)' == ''">
+    <_Probe1>C:\Program Files (x86)\Steam\steamapps\common\PEAK</_Probe1>
+    <_Probe2>C:\Program Files\Steam\steamapps\common\PEAK</_Probe2>
+    <_Probe3>A:\SteamLibrary\steamapps\common\PEAK</_Probe3>
+    <_Probe4>D:\SteamLibrary\steamapps\common\PEAK</_Probe4>
+    <_Probe5>E:\SteamLibrary\steamapps\common\PEAK</_Probe5>
+    <PeakDir Condition="Exists('$(_Probe1)')">$(_Probe1)</PeakDir>
+    <PeakDir Condition="'$(PeakDir)' == '' AND Exists('$(_Probe2)')">$(_Probe2)</PeakDir>
+    <PeakDir Condition="'$(PeakDir)' == '' AND Exists('$(_Probe3)')">$(_Probe3)</PeakDir>
+    <PeakDir Condition="'$(PeakDir)' == '' AND Exists('$(_Probe4)')">$(_Probe4)</PeakDir>
+    <PeakDir Condition="'$(PeakDir)' == '' AND Exists('$(_Probe5)')">$(_Probe5)</PeakDir>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <PeakManaged>$(PeakDir)\PEAK_Data\Managed</PeakManaged>
+  </PropertyGroup>
+
+  <Target Name="VerifyPeakDir" BeforeTargets="BeforeBuild">
+    <Error Condition="'$(PeakDir)' == ''"
+           Text="PEAK installation not found. Set PEAK_DIR or pass /p:PeakDir=&quot;...\steamapps\common\PEAK&quot;." />
+    <Error Condition="!Exists('$(PeakManaged)\Assembly-CSharp.dll')"
+           Text="Assembly-CSharp.dll not found under '$(PeakManaged)'. Is PeakDir ('$(PeakDir)') the PEAK folder?" />
+  </Target>
+
+</Project>

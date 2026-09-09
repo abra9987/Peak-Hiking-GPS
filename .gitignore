@@ -1,0 +1,29 @@
+# --- Build output ---
+[Bb]in/
+[Oo]bj/
+*.user
+*.suo
+.vs/
+.idea/
+
+# --- Node ---
+node_modules/
+web/dist/
+.vite/
+
+# --- Game assemblies (never commit: they are copyrighted) ---
+plugin/lib/*.dll
+plugin/lib/*.xml
+
+# --- Captured snapshots ---
+# Map data is binary and changes daily. It MUST NOT enter git history:
+# committing ~40 MB/day is what inflated the reference project to 2 GB.
+# Snapshots are published to the `data` orphan branch / Releases instead.
+capture-output/
+web/public/data/
+*.height.bin
+*.albedo.jpg
+*.bin.gz
+
+# --- Local config ---
+tools/local.env

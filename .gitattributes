@@ -1,0 +1,9 @@
+* text=auto eol=lf
+*.cs        text diff=csharp
+*.ps1       text eol=crlf
+*.csproj    text
+*.md        text
+*.png       binary
+*.jpg       binary
+*.bin       binary
+*.gz        binary

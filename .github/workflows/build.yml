@@ -1,0 +1,48 @@
+name: build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  web:
+    name: Web client
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - run: npm ci
+        working-directory: web
+
+      # Generating the fixture before building is the contract test: if the
+      # viewer cannot render a snapshot produced from docs/DATA-FORMAT.md alone,
+      # the format and the client have drifted apart.
+      - name: Generate format fixture
+        run: node tools/make-fixture.mjs
+
+      - run: npm run build
+        working-directory: web
+
+  plugin:
+    name: Capture plugin
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      # The plugin references PEAK's own assemblies, which cannot be
+      # redistributed, so CI can only check that the project and its NuGet
+      # dependencies resolve. Compilation happens on a machine with the game.
+      - name: Restore
+        run: dotnet restore plugin/PeakMapInteractive.csproj
+        continue-on-error: true

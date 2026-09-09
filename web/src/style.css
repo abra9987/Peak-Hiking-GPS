@@ -1,0 +1,183 @@
+:root {
+  --bg: #0d1117;
+  --panel: rgba(18, 22, 30, 0.86);
+  --border: rgba(255, 255, 255, 0.09);
+  --text: #e7edf5;
+  --muted: #93a1b3;
+  --accent: #ff8c42;
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+  background: var(--bg);
+  color: var(--text);
+  font: 14px/1.45 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+#app { position: fixed; inset: 0; }
+#app canvas { display: block; cursor: grab; touch-action: none; }
+#app canvas:active { cursor: grabbing; }
+
+/* --- Panel ------------------------------------------------------------- */
+
+#panel {
+  position: fixed;
+  top: 16px;
+  left: 16px;
+  width: 264px;
+  max-height: calc(100dvh - 32px);
+  overflow-y: auto;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--panel);
+  backdrop-filter: blur(14px);
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.45);
+}
+
+#panel h1 {
+  margin: 0 0 14px;
+  font-size: 15px;
+  font-weight: 650;
+  letter-spacing: 0.01em;
+}
+
+#panel h1 span { color: var(--accent); font-weight: 450; }
+
+#panel h2 {
+  margin: 18px 0 8px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+/* --- Snapshot metadata -------------------------------------------------- */
+
+.meta-line {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 3px 0;
+  font-size: 12px;
+}
+
+.meta-line .label { color: var(--muted); }
+.meta-line .value { font-variant-numeric: tabular-nums; }
+
+/* --- Biome selector ----------------------------------------------------- */
+
+#segments { display: grid; gap: 4px; }
+
+.segment {
+  padding: 8px 10px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.14s, border-color 0.14s;
+}
+
+.segment:hover { background: rgba(255, 255, 255, 0.1); }
+
+.segment.active {
+  border-color: var(--accent);
+  background: rgba(255, 140, 66, 0.16);
+}
+
+/* --- Layer toggles ------------------------------------------------------ */
+
+.layer {
+  display: grid;
+  grid-template-columns: auto auto 1fr auto;
+  align-items: center;
+  gap: 9px;
+  padding: 5px 2px;
+  cursor: pointer;
+}
+
+.layer input { accent-color: var(--accent); margin: 0; }
+
+.swatch {
+  width: 11px;
+  height: 11px;
+  border: 1px solid rgba(255, 255, 255, 0.5);
+  border-radius: 50%;
+}
+
+.layer-count {
+  color: var(--muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* --- Tooltip ------------------------------------------------------------ */
+
+#tooltip {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 10;
+  max-width: 260px;
+  padding: 9px 11px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: rgba(12, 15, 21, 0.95);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+  pointer-events: none;
+}
+
+.tooltip-title { font-weight: 620; }
+.tooltip-variant { margin-top: 2px; color: var(--accent); font-size: 12px; }
+.tooltip-name { color: var(--muted); font-size: 12px; }
+.tooltip-meta { margin-top: 4px; font-size: 12px; font-variant-numeric: tabular-nums; }
+.tooltip-type { margin-top: 3px; color: #6f7c8d; font-family: ui-monospace, monospace; font-size: 11px; }
+
+/* --- Status & footer ---------------------------------------------------- */
+
+#status {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  translate: -50% -50%;
+  padding: 11px 18px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--panel);
+}
+
+#disclaimer {
+  position: fixed;
+  right: 14px;
+  bottom: 12px;
+  max-width: 44ch;
+  color: #5d6875;
+  font-size: 11px;
+  text-align: right;
+  pointer-events: none;
+}
+
+/* --- Narrow screens ----------------------------------------------------- */
+
+@media (max-width: 720px) {
+  #panel {
+    top: auto;
+    bottom: 12px;
+    left: 12px;
+    right: 12px;
+    width: auto;
+    max-height: 44dvh;
+  }
+
+  #disclaimer { display: none; }
+}

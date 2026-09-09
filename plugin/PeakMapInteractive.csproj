@@ -1,0 +1,44 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>netstandard2.1</TargetFramework>
+    <AssemblyName>PeakMapInteractive</AssemblyName>
+    <RootNamespace>PeakMapInteractive</RootNamespace>
+    <Version>0.1.0</Version>
+    <LangVersion>latest</LangVersion>
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <AllowUnsafeBlocks>false</AllowUnsafeBlocks>
+    <!-- Game assemblies are not CLS-compliant and produce a lot of noise. -->
+    <NoWarn>CS0436;CS0618;MSB3277</NoWarn>
+    <GenerateAssemblyInfo>true</GenerateAssemblyInfo>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="BepInEx.Core" Version="5.*" />
+    <PackageReference Include="BepInEx.PluginInfoProps" Version="2.*" />
+  </ItemGroup>
+
+  <!--
+    Game + engine assemblies, referenced in place. Private=false keeps them out
+    of the build output; BepInEx resolves them at runtime from the game itself.
+  -->
+  <ItemGroup>
+    <Reference Include="Assembly-CSharp;Assembly-CSharp-firstpass;Newtonsoft.Json;Zorro.Core.Runtime;PhotonUnityNetworking;PhotonRealtime;Unity.Collections;Unity.Mathematics;Unity.Burst;UnityEngine;UnityEngine.CoreModule;UnityEngine.PhysicsModule;UnityEngine.TerrainModule;UnityEngine.ImageConversionModule;UnityEngine.ScreenCaptureModule;UnityEngine.InputLegacyModule">
+      <HintPath>$(PeakManaged)\%(Identity).dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+  </ItemGroup>
+
+  <!-- Drop the built plugin straight into BepInEx if the game folder is known. -->
+  <Target Name="DeployToGame" AfterTargets="Build"
+          Condition="'$(PeakDir)' != '' AND Exists('$(PeakDir)\BepInEx\plugins')">
+    <MakeDir Directories="$(PeakDir)\BepInEx\plugins\PeakMapInteractive" />
+    <Copy SourceFiles="$(TargetPath)"
+          DestinationFolder="$(PeakDir)\BepInEx\plugins\PeakMapInteractive"
+          ContinueOnError="true" />
+    <Message Importance="high" Text="Deployed $(TargetFileName) -> $(PeakDir)\BepInEx\plugins\PeakMapInteractive" />
+  </Target>
+
+</Project>

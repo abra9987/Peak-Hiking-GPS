@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Peak Map Interactive</title>
+  <meta name="description" content="Interactive 3D map of the PEAK daily mountain: real terrain, real altitudes, luggage, belltowers, amulets and wildlife.">
+  <link rel="stylesheet" href="./src/style.css">
+</head>
+<body>
+  <div id="app"></div>
+
+  <aside id="panel">
+    <header>
+      <h1>Peak Map <span>Interactive</span></h1>
+    </header>
+
+    <section id="meta"></section>
+
+    <section>
+      <h2>Biome</h2>
+      <div id="segments"></div>
+    </section>
+
+    <section>
+      <h2>Layers</h2>
+      <div id="layers"></div>
+    </section>
+  </aside>
+
+  <div id="tooltip" hidden></div>
+  <div id="status" hidden></div>
+
+  <footer id="disclaimer">
+    Unofficial fan project. Not affiliated with, endorsed or sponsored by Aggro Crab or Landfall Games.
+  </footer>
+
+  <script type="module" src="./src/main.js"></script>
+</body>
+</html>
