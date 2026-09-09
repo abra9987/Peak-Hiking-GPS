@@ -39,7 +39,6 @@ namespace PeakMapInteractive.Minimap
         private RectTransform _panel;
         private RectTransform _playerMarker;
         private TextMeshProUGUI _readout;
-        private RectTransform _compass;
 
         private float _lastAltitude;
         private float _climbRate;
@@ -138,47 +137,13 @@ namespace PeakMapInteractive.Minimap
 
             _playerMarker = CreateArrow(panelObject.transform);
             _readout = CreateReadout(panelObject.transform);
-            _compass = CreateCompass(panelObject.transform);
         }
 
         /// <summary>
-        /// A needle that always points at the nearest loot, the way the game's
-        /// own compass points at things rather than at north.
+        /// Altitude and the nearest chest, under the map.
         ///
-        /// It sits outside the map's edge so it keeps working when the loot is
-        /// beyond the visible area — which is exactly when a direction is worth
-        /// more than a dot.
-        /// </summary>
-        private static RectTransform CreateCompass(Transform parent)
-        {
-            var holder = new GameObject("LootCompass");
-            holder.transform.SetParent(parent, worldPositionStays: false);
-
-            var rect = holder.AddComponent<RectTransform>();
-            rect.anchorMin = rect.anchorMax = new Vector2(0.5f, 0f);
-            rect.pivot = new Vector2(0.5f, 0.5f);
-            rect.anchoredPosition = new Vector2(0f, -62f);
-            rect.sizeDelta = new Vector2(26f, 26f);
-
-            var image = holder.AddComponent<Image>();
-            image.sprite = ArrowSprite();
-            image.color = new Color(1f, 0.72f, 0.25f);
-            image.raycastTarget = false;
-
-            var outline = holder.AddComponent<Outline>();
-            outline.effectColor = new Color(0f, 0f, 0f, 0.9f);
-            outline.effectDistance = new Vector2(2f, -2f);
-
-            return rect;
-        }
-
-        /// <summary>
-        /// Altitude, and how fast it is changing, under the map.
-        ///
-        /// PEAK is a game about getting higher; a map that shows only where you
-        /// are on the ground leaves out the axis the whole run is measured on.
-        /// The trend arrow answers the question you actually ask mid-climb —
-        /// am I still gaining height on this line, or has it flattened out.
+        /// PEAK is scored on height, and a map is the one view that hides it:
+        /// looking down flattens away the only axis the run is about.
         /// </summary>
         private static TextMeshProUGUI CreateReadout(Transform parent)
         {
@@ -190,7 +155,7 @@ namespace PeakMapInteractive.Minimap
             rect.anchorMax = new Vector2(1f, 0f);
             rect.pivot = new Vector2(0.5f, 1f);
             rect.anchoredPosition = new Vector2(0f, -4f);
-            rect.sizeDelta = new Vector2(0f, 46f);
+            rect.sizeDelta = new Vector2(0f, 52f);
 
             var text = textObject.AddComponent<TextMeshProUGUI>();
             text.font = GameFont();
@@ -204,9 +169,8 @@ namespace PeakMapInteractive.Minimap
         }
 
         /// <summary>
-        /// The game's own font, borrowed from whatever it has already loaded,
-        /// so the overlay reads as part of PEAK rather than as something bolted
-        /// on. Falls back to whatever TMP offers if that fails.
+        /// The game's own font, borrowed from what it has already loaded, so
+        /// the overlay reads as part of PEAK rather than as something bolted on.
         /// </summary>
         private static TMP_FontAsset GameFont()
         {
@@ -217,13 +181,9 @@ namespace PeakMapInteractive.Minimap
         }
 
         /// <summary>
-        /// The player is drawn as an arrow, not a dot or a model.
-        ///
-        /// At three hundred metres across, the character model is one or two
-        /// pixels: neither the body nor the face would be legible, and both
-        /// would cost the Character layer sitting between the camera and the
-        /// ground. Which way you are facing is the part that actually helps
-        /// when picking a line, so that is what the marker shows.
+        /// The player is drawn as an arrow, not a dot or a model: at this scale
+        /// a character is a pixel or two, and which way you face is the part
+        /// that helps when picking a line.
         /// </summary>
         private static RectTransform CreateArrow(Transform parent)
         {
@@ -245,13 +205,10 @@ namespace PeakMapInteractive.Minimap
             {
                 for (int x = 0; x < size; x++)
                 {
-                    // A triangle that narrows towards the top of the texture,
-                    // with a notch cut out of the base so it reads as an arrow
-                    // rather than a wedge at small sizes.
                     float u = (x + 0.5f) / size;
                     float v = (y + 0.5f) / size;
                     float halfWidth = 0.5f * (1f - v);
-                    bool inside = Mathf.Abs(u - 0.5f) <= halfWidth && v <= 1f;
+                    bool inside = Mathf.Abs(u - 0.5f) <= halfWidth;
                     bool notch = v < 0.28f && Mathf.Abs(u - 0.5f) < 0.5f * (0.28f - v) / 0.28f * 0.9f;
 
                     texture.SetPixel(x, y, inside && !notch ? Color.white : Color.clear);
@@ -316,7 +273,6 @@ namespace PeakMapInteractive.Minimap
             AimPlayerArrow();
             UpdateMarkers();
             UpdateReadout();
-            UpdateCompass();
         }
 
         /// <summary>
@@ -417,42 +373,26 @@ namespace PeakMapInteractive.Minimap
 
             string line = $"{trend} {Mathf.RoundToInt(altitude)} m";
 
-            float nearest = NearestLootDistance(player.Center);
-            if (nearest < float.MaxValue)
-                line += System.Environment.NewLine + $"<color=#FFB84A>loot {Mathf.RoundToInt(nearest)} m</color>";
-
-            _readout.text = line;
-        }
-
-        /// <summary>
-        /// Turns the needle towards the nearest loot, in the map's fixed
-        /// north-up frame, and hides it when there is nothing to point at.
-        /// </summary>
-        private void UpdateCompass()
-        {
-            Character player = Character.localCharacter;
-            if (_compass == null || player == null) return;
-
-            if (!TryNearestLoot(player.Center, out Vector3 target, out float _))
+            if (TryNearestLoot(player.Center, out Vector3 chest, out float _))
             {
-                _compass.gameObject.SetActive(false);
-                return;
+                Vector3 toChest = chest - player.Center;
+
+                // Split into ground distance and height on purpose. Thirty
+                // metres sideways and thirty metres up are nothing alike here:
+                // one is a walk, the other may have no route at all, and a
+                // single straight-line number hides which you are looking at.
+                int across = Mathf.RoundToInt(new Vector2(toChest.x, toChest.z).magnitude);
+                int up = Mathf.RoundToInt(toChest.y);
+
+                string height = up > 2 ? $"<color=#7FE08A>+{up} m</color>"
+                    : up < -2 ? $"<color=#E08A7F>{up} m</color>"
+                    : "<color=#8A909A>level</color>";
+
+                line += System.Environment.NewLine +
+                        $"<color=#FFB84A>chest {across} m</color>  {height}";
             }
 
-            _compass.gameObject.SetActive(true);
-
-            Vector3 delta = target - player.Center;
-
-            // Relative to where the player is looking, not to north. A held
-            // compass points ahead of you and swings as you turn; measuring it
-            // in the map's fixed frame left the needle motionless through a
-            // full spin, which is not what a compass does.
-            float bearing = Mathf.Atan2(delta.x, delta.z) * Mathf.Rad2Deg;
-            float facing = MainCamera.instance != null
-                ? MainCamera.instance.transform.eulerAngles.y
-                : 0f;
-
-            _compass.localRotation = Quaternion.Euler(0f, 0f, -(bearing - facing));
+            _readout.text = line;
         }
 
         private bool TryNearestLoot(Vector3 from, out Vector3 position, out float distance)
@@ -516,16 +456,50 @@ namespace PeakMapInteractive.Minimap
 
                 RectTransform dot = MarkerAt(used++);
                 dot.gameObject.SetActive(true);
-                dot.GetComponent<Image>().color = _sightings[i].Colour;
+                dot.GetComponent<Image>().color = ShadeByHeight(_sightings[i]);
 
                 Vector2 size = _panel.sizeDelta;
                 dot.anchoredPosition = new Vector2(
                     (viewport.x - 0.5f) * size.x,
                     (viewport.y - 0.5f) * size.y);
+
+                Character self = Character.localCharacter;
+                if (self != null)
+                {
+                    float up = Mathf.Clamp((_sightings[i].World.y - self.Center.y) / 60f, -1f, 1f);
+                    float scale = Mathf.Lerp(9f, 17f, (up + 1f) * 0.5f);
+                    dot.sizeDelta = new Vector2(scale, scale);
+                }
             }
 
             for (int i = used; i < _markerPool.Count; i++)
                 _markerPool[i].gameObject.SetActive(false);
+        }
+
+        /// <summary>
+        /// Shades a marker by how far above or below the player it sits, and
+        /// sizes it the same way.
+        ///
+        /// This is the one thing a top-down map cannot say on its own, and in
+        /// PEAK it is the thing that matters: a chest thirty metres away on the
+        /// flat is a short walk, the same chest thirty metres up may have no
+        /// route to it at all. Looking at the map and guessing wrong about
+        /// which one you are seeing is the mistake worth designing out.
+        ///
+        /// Higher reads lighter and larger, lower reads darker and smaller,
+        /// the way distance already reads on any map.
+        /// </summary>
+        private Color ShadeByHeight(MarkerSighting sighting)
+        {
+            Character player = Character.localCharacter;
+            if (player == null) return sighting.Colour;
+
+            float up = sighting.World.y - player.Center.y;
+            float t = Mathf.Clamp(up / 60f, -1f, 1f);
+
+            return t >= 0f
+                ? Color.Lerp(sighting.Colour, Color.white, t * 0.65f)
+                : Color.Lerp(sighting.Colour, new Color(0.16f, 0.14f, 0.18f), -t * 0.7f);
         }
 
         private RectTransform MarkerAt(int index)
