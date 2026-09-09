@@ -36,7 +36,9 @@ namespace PeakMapInteractive.Minimap
         private Camera _camera;
         private RenderTexture _target;
         private Canvas _canvas;
+        private RectTransform _frame;
         private RectTransform _panel;
+        private RectTransform _compass;
         private RectTransform _playerMarker;
         private TextMeshProUGUI _readout;
 
@@ -120,15 +122,37 @@ namespace PeakMapInteractive.Minimap
             _canvas.sortingOrder = 500;   // above the game's HUD
             canvasObject.AddComponent<CanvasScaler>();
 
+            float size = Plugin.Settings.MinimapSize.Value;
+            const float border = 7f;
+            const float readoutHeight = 46f;
+
+            // A frame around the whole thing, with the numbers inside it. Loose
+            // elements floating over the world read as debug output; a bordered
+            // panel reads as part of the game's interface.
+            var frameObject = new GameObject("Frame");
+            frameObject.transform.SetParent(canvasObject.transform, worldPositionStays: false);
+
+            _frame = frameObject.AddComponent<RectTransform>();
+            _frame.anchorMin = _frame.anchorMax = new Vector2(1f, 1f);
+            _frame.pivot = new Vector2(1f, 1f);
+            _frame.anchoredPosition = new Vector2(-18f, -18f);
+            _frame.sizeDelta = new Vector2(size + border * 2f, size + border * 2f + readoutHeight);
+
+            var frameImage = frameObject.AddComponent<Image>();
+            frameImage.color = new Color(0.06f, 0.07f, 0.09f, 0.92f);
+            frameImage.raycastTarget = false;
+
+            var frameOutline = frameObject.AddComponent<Outline>();
+            frameOutline.effectColor = new Color(0.75f, 0.66f, 0.48f, 0.85f);
+            frameOutline.effectDistance = new Vector2(2f, -2f);
+
             var panelObject = new GameObject("Panel");
-            panelObject.transform.SetParent(canvasObject.transform, worldPositionStays: false);
+            panelObject.transform.SetParent(frameObject.transform, worldPositionStays: false);
 
             _panel = panelObject.AddComponent<RectTransform>();
-            _panel.anchorMin = _panel.anchorMax = new Vector2(1f, 1f);
-            _panel.pivot = new Vector2(1f, 1f);
-            _panel.anchoredPosition = new Vector2(-16f, -16f);
-
-            float size = Plugin.Settings.MinimapSize.Value;
+            _panel.anchorMin = _panel.anchorMax = new Vector2(0.5f, 1f);
+            _panel.pivot = new Vector2(0.5f, 1f);
+            _panel.anchoredPosition = new Vector2(0f, -border);
             _panel.sizeDelta = new Vector2(size, size);
 
             var image = panelObject.AddComponent<RawImage>();
@@ -136,7 +160,64 @@ namespace PeakMapInteractive.Minimap
             image.raycastTarget = false;
 
             _playerMarker = CreateArrow(panelObject.transform);
-            _readout = CreateReadout(panelObject.transform);
+            _readout = CreateReadout(frameObject.transform);
+            _compass = CreateCompass(panelObject.transform);
+        }
+
+        /// <summary>
+        /// The game's own compass item, in the corner of the map, turning
+        /// towards the nearest chest.
+        ///
+        /// Using the actual item icon rather than a drawn arrow is the point:
+        /// a player who has held that compass knows instantly what it does, so
+        /// the overlay needs no explaining.
+        /// </summary>
+        private static RectTransform CreateCompass(Transform parent)
+        {
+            var holder = new GameObject("Compass");
+            holder.transform.SetParent(parent, worldPositionStays: false);
+
+            var rect = holder.AddComponent<RectTransform>();
+            rect.anchorMin = rect.anchorMax = new Vector2(0f, 0f);
+            rect.pivot = new Vector2(0f, 0f);
+            rect.anchoredPosition = new Vector2(8f, 8f);
+            rect.sizeDelta = new Vector2(52f, 52f);
+
+            var image = holder.AddComponent<Image>();
+            image.sprite = CompassSprite() ?? ArrowSprite();
+            image.color = Color.white;
+            image.raycastTarget = false;
+            image.preserveAspect = true;
+
+            return rect;
+        }
+
+        private static Sprite _compassSprite;
+
+        /// <summary>
+        /// Pulls the compass icon out of the item the game has already loaded.
+        /// Nothing is copied into the mod, so no artwork is redistributed.
+        /// </summary>
+        private static Sprite CompassSprite()
+        {
+            if (_compassSprite != null) return _compassSprite;
+
+            foreach (Item item in Resources.FindObjectsOfTypeAll<Item>())
+            {
+                if (item == null || item.UIData == null) continue;
+
+                string name = item.UIData.itemName ?? item.name ?? string.Empty;
+                if (name.IndexOf("compass", System.StringComparison.OrdinalIgnoreCase) < 0) continue;
+
+                Texture2D icon = item.UIData.GetIcon();
+                if (icon == null) continue;
+
+                _compassSprite = Sprite.Create(
+                    icon, new Rect(0f, 0f, icon.width, icon.height), new Vector2(0.5f, 0.5f));
+                return _compassSprite;
+            }
+
+            return null;
         }
 
         /// <summary>
@@ -273,6 +354,7 @@ namespace PeakMapInteractive.Minimap
             AimPlayerArrow();
             UpdateMarkers();
             UpdateReadout();
+            UpdateCompass();
         }
 
         /// <summary>
@@ -393,6 +475,32 @@ namespace PeakMapInteractive.Minimap
             }
 
             _readout.text = line;
+        }
+
+        /// <summary>
+        /// Points the compass at the nearest chest, relative to where the
+        /// player is facing, the way a compass held in the hand behaves.
+        /// </summary>
+        private void UpdateCompass()
+        {
+            Character player = Character.localCharacter;
+            if (_compass == null || player == null) return;
+
+            if (!TryNearestLoot(player.Center, out Vector3 target, out float _))
+            {
+                _compass.gameObject.SetActive(false);
+                return;
+            }
+
+            _compass.gameObject.SetActive(true);
+
+            Vector3 delta = target - player.Center;
+            float bearing = Mathf.Atan2(delta.x, delta.z) * Mathf.Rad2Deg;
+            float facing = MainCamera.instance != null
+                ? MainCamera.instance.transform.eulerAngles.y
+                : 0f;
+
+            _compass.localRotation = Quaternion.Euler(0f, 0f, -(bearing - facing));
         }
 
         private bool TryNearestLoot(Vector3 from, out Vector3 position, out float distance)
