@@ -35,6 +35,7 @@ namespace PeakMapInteractive
         public readonly ConfigEntry<bool> MinimapIcons;
         public readonly ConfigEntry<float> MinimapMarkerSize;
         public readonly ConfigEntry<bool> MinimapDumpIcons;
+        public readonly ConfigEntry<UnityEngine.KeyCode> MinimapBakeAllKey;
         public readonly ConfigEntry<float> MinimapStartDelay;
         public readonly ConfigEntry<int> MinimapIconResolution;
 
@@ -180,6 +181,12 @@ namespace PeakMapInteractive
                     "buys detail in the mipmaps rather than on screen — which is what stops a " +
                     "suitcase turning to mush at map size.",
                     new AcceptableValueRange<int>(64, 1024)));
+
+            MinimapBakeAllKey = cfg.Bind(
+                "Minimap", "BakeAllKey", UnityEngine.KeyCode.F10,
+                "Photographs every kind of thing anywhere on the loaded mountain at once, "  +
+                "rather than waiting to walk past one of each. Meant for working on the "  +
+                "icons: the nearest statue can be five minutes of climbing away.");
 
             MinimapDumpIcons = cfg.Bind(
                 "Debug", "DumpIcons", false,

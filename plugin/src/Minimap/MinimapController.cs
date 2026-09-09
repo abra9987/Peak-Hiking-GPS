@@ -489,6 +489,8 @@ namespace PeakMapInteractive.Minimap
             if (Input.GetKeyDown(Plugin.Settings.MinimapAngleKey.Value))
                 _pitchIndex = (_pitchIndex + 1) % Pitches.Length;
 
+            if (Input.GetKeyDown(Plugin.Settings.MinimapBakeAllKey.Value)) BakeEverything();
+
             Follow();
             AimPlayerArrow();
             UpdateMarkers();
@@ -936,6 +938,74 @@ namespace PeakMapInteractive.Minimap
                 });
                 if (_sightings.Count >= MaxMarkers) return;
             }
+        }
+
+        /// <summary>
+        /// Photographs every kind of thing anywhere on the loaded mountain, in
+        /// one go, instead of waiting to walk past one of each.
+        ///
+        /// Icons are normally baked on first sighting, which is right for
+        /// playing and hopeless for working on them: the nearest statue can be
+        /// five minutes of climbing away, and that is five minutes per attempt
+        /// at getting a statue to look right. The whole level is already in
+        /// memory, so there is nothing to walk to.
+        /// </summary>
+        private static void BakeEverything()
+        {
+            int asked = 0;
+
+            foreach (Luggage chest in Luggage.ALL_LUGGAGE)
+            {
+                if (chest == null || chest.IsOpen) continue;
+                if (Ask(chest.gameObject)) asked++;
+            }
+
+            foreach (Capybara animal in FindObjectsOfType<Capybara>())
+                if (Ask(animal.gameObject)) asked++;
+
+            foreach (Scoutmaster monster in FindObjectsOfType<Scoutmaster>())
+                if (Ask(monster.gameObject)) asked++;
+
+            foreach (Mob mob in FindObjectsOfType<Mob>())
+                if (Ask(mob.gameObject)) asked++;
+
+            // Landmarks are known by name rather than by component, so they can
+            // only be found by walking the level. Expensive, and paid once by
+            // somebody who pressed a key on purpose.
+            MapHandler map = Singleton<MapHandler>.Instance;
+
+            if (map?.segments != null)
+            {
+                foreach (var segment in map.segments)
+                {
+                    if (segment?.segmentParent == null) continue;
+                    asked += Sweep(segment.segmentParent.transform);
+                }
+            }
+
+            Plugin.Logger.LogInfo($"Minimap: asked for {asked} icon(s) across the whole level.");
+        }
+
+        private static int Sweep(Transform branch)
+        {
+            int asked = 0;
+
+            if (TryClassify(branch.gameObject, out Color _, out bool _) && Ask(branch.gameObject))
+                asked++;
+
+            for (int i = 0; i < branch.childCount; i++)
+                asked += Sweep(branch.GetChild(i));
+
+            return asked;
+        }
+
+        private static bool Ask(GameObject go)
+        {
+            string key = IconBaker.KeyFor(go);
+            if (string.IsNullOrEmpty(key) || IconBaker.Get(key) != null) return false;
+
+            IconBaker.Request(key, go);
+            return true;
         }
 
         /// <summary>
