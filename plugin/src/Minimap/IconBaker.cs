@@ -71,7 +71,7 @@ namespace PeakMapInteractive.Minimap
         /// clear of the water box at y = -1, which is 1000 units tall and so
         /// reaches down to -501.
         /// </summary>
-        private static readonly Vector3 Stand = new Vector3(0f, -9000f, 0f);
+        private static readonly Vector3 StandPosition = new Vector3(0f, -9000f, 0f);
 
         /// <summary>Baked icons, plus a null for anything that could not be baked.</summary>
         private static readonly Dictionary<string, Sprite> _icons = new Dictionary<string, Sprite>();
@@ -89,14 +89,38 @@ namespace PeakMapInteractive.Minimap
             public GameObject Source;
         }
 
-        /// <summary>Camera, lights and their original strengths, as one thing.</summary>
+        /// <summary>Camera and lights, as one thing.</summary>
         private sealed class Rig
         {
             public GameObject Root;
             public Camera Camera;
-            public Light[] Lights;
-            public float[] Strength;
         }
+
+        /// <summary>
+        /// The copy being photographed, together with its own private copies of
+        /// the materials and the colour each one started at.
+        ///
+        /// Private copies are what make exposure possible at all. The scene's
+        /// sun and ambient are not this code's to turn down — cutting the rig's
+        /// own lamps to a twentieth still left a marble statue with 72 per cent
+        /// of it burnt out — but how much light the copy reflects is, and
+        /// dimming its albedo scales every source at once, the sun included.
+        /// </summary>
+        private sealed class Stand
+        {
+            public GameObject Root;
+            public Bounds Bounds;
+            public Material[] Materials;
+            public int[] TintId;
+            public Color[] Tint;
+        }
+
+        /// <summary>
+        /// The property a shader keeps its base colour in, in the order worth
+        /// trying. Anything using none of them cannot be exposed, and falls
+        /// back to whatever light it happens to get.
+        /// </summary>
+        private static readonly string[] TintNames = { "_BaseColor", "_Color", "_Tint" };
 
         /// <summary>What one photograph came back with.</summary>
         private struct Shot
@@ -197,7 +221,7 @@ namespace PeakMapInteractive.Minimap
             _resolution = Mathf.Clamp(Plugin.Settings.MinimapIconResolution.Value, 64, 1024);
 
             var temporary = new List<Mesh>();
-            GameObject stand = BuildStand(order.Source, temporary, out Bounds bounds);
+            Stand stand = BuildStand(order.Source, temporary);
 
             if (stand == null)
             {
@@ -213,11 +237,11 @@ namespace PeakMapInteractive.Minimap
             };
             target.Create();
 
-            Rig rig = BuildRig(bounds, target);
+            Rig rig = BuildRig(stand.Bounds, target);
 
             Plugin.Logger.LogInfo(
-                $"Minimap: baking '{order.Key}' at {_resolution}px — bounds centre {bounds.center}, " +
-                $"size {bounds.size}, half-frame {rig.Camera.orthographicSize:0.###}, " +
+                $"Minimap: baking '{order.Key}' at {_resolution}px — bounds centre {stand.Bounds.center}, " +
+                $"size {stand.Bounds.size}, half-frame {rig.Camera.orthographicSize:0.###}, " +
                 $"lighting {Lighting()}");
 
             // Photographed until it comes out at a readable brightness, rather
@@ -231,7 +255,7 @@ namespace PeakMapInteractive.Minimap
 
             for (int attempt = 1; attempt <= 3; attempt++)
             {
-                Expose(rig, exposure);
+                Expose(stand, exposure);
 
                 // A whole frame each time, not WaitForEndOfFrame: a coroutine
                 // already running in the end-of-frame phase resumes inside that
@@ -276,7 +300,10 @@ namespace PeakMapInteractive.Minimap
             Sprite icon = Finish(order.Key, shot);
 
             UnityEngine.Object.Destroy(rig.Root);
-            UnityEngine.Object.Destroy(stand);
+            UnityEngine.Object.Destroy(stand.Root);
+
+            foreach (Material material in stand.Materials)
+                if (material != null) UnityEngine.Object.Destroy(material);
 
             foreach (Mesh mesh in temporary)
                 if (mesh != null) UnityEngine.Object.Destroy(mesh);
@@ -351,12 +378,13 @@ namespace PeakMapInteractive.Minimap
         /// any behaviour attached — meshes, materials, transforms, and that is
         /// all.
         /// </summary>
-        private static GameObject BuildStand(GameObject source, List<Mesh> temporary, out Bounds bounds)
+        private static Stand BuildStand(GameObject source, List<Mesh> temporary)
         {
-            bounds = default;
+            var bounds = default(Bounds);
+            var materials = new List<Material>();
 
             var stand = new GameObject("PeakMapInteractive_IconStand");
-            stand.transform.SetPositionAndRotation(Stand, Quaternion.identity);
+            stand.transform.SetPositionAndRotation(StandPosition, Quaternion.identity);
 
             Transform origin = source.transform;
             bool any = false;
@@ -398,7 +426,7 @@ namespace PeakMapInteractive.Minimap
                 piece.AddComponent<MeshFilter>().sharedMesh = mesh;
 
                 var copy = piece.AddComponent<MeshRenderer>();
-                copy.sharedMaterials = renderer.sharedMaterials;
+                copy.sharedMaterials = Borrow(renderer.sharedMaterials, materials);
                 copy.receiveShadows = false;
                 copy.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
 
@@ -417,11 +445,62 @@ namespace PeakMapInteractive.Minimap
                 return null;
             }
 
+            var tintId = new int[materials.Count];
+            var tint = new Color[materials.Count];
+            int exposable = 0;
+
+            for (int i = 0; i < materials.Count; i++)
+            {
+                tintId[i] = TintOf(materials[i]);
+                if (tintId[i] < 0) continue;
+
+                tint[i] = materials[i].GetColor(tintId[i]);
+                exposable++;
+            }
+
             Plugin.Logger.LogInfo(
                 $"Minimap: '{source.name}' copied as {stand.transform.childCount} renderer(s)" +
-                (far > 0 ? $", {far} left behind as scenery." : "."));
+                (far > 0 ? $", {far} left behind as scenery" : "") +
+                $", {exposable} of {materials.Count} material(s) can be exposed.");
 
-            return stand;
+            return new Stand
+            {
+                Root = stand,
+                Bounds = bounds,
+                Materials = materials.ToArray(),
+                TintId = tintId,
+                Tint = tint
+            };
+        }
+
+        /// <summary>
+        /// Private copies of a renderer's materials, so the copy's brightness
+        /// can be turned down without touching the object it was copied from.
+        /// </summary>
+        private static Material[] Borrow(Material[] shared, List<Material> owned)
+        {
+            var copies = new Material[shared.Length];
+
+            for (int i = 0; i < shared.Length; i++)
+            {
+                if (shared[i] == null) continue;
+
+                copies[i] = new Material(shared[i]);
+                owned.Add(copies[i]);
+            }
+
+            return copies;
+        }
+
+        private static int TintOf(Material material)
+        {
+            foreach (string name in TintNames)
+            {
+                int id = Shader.PropertyToID(name);
+                if (material.HasProperty(id)) return id;
+            }
+
+            return -1;
         }
 
         /// <summary>
@@ -574,23 +653,32 @@ namespace PeakMapInteractive.Minimap
             // the rest of the run because the icon is baked once. A point light
             // reaches only as far as its range, so nine kilometres up the
             // mountain nothing notices these exist.
-            var lights = new[]
-            {
-                AddLight(root.transform, bounds.center, rotation * new Vector3(-0.7f, 1f, -1.2f) * radius * 2f, 1f),
-                AddLight(root.transform, bounds.center, rotation * new Vector3(1f, 0.1f, -0.9f) * radius * 2.5f, 0.35f)
-            };
+            AddLight(root.transform, bounds.center, rotation * new Vector3(-0.7f, 1f, -1.2f) * radius * 2f, 1f);
+            AddLight(root.transform, bounds.center, rotation * new Vector3(1f, 0.1f, -0.9f) * radius * 2.5f, 0.35f);
 
-            var strength = new float[lights.Length];
-            for (int i = 0; i < lights.Length; i++) strength[i] = lights[i].intensity;
-
-            return new Rig { Root = root, Camera = camera, Lights = lights, Strength = strength };
+            return new Rig { Root = root, Camera = camera };
         }
 
-        /// <summary>Turns the rig's lights up or down together.</summary>
-        private static void Expose(Rig rig, float exposure)
+        /// <summary>
+        /// Sets how much light the copy gives back.
+        ///
+        /// Turning the rig's own lamps down was the obvious lever and it does
+        /// not reach: a marble statue stayed 72 per cent burnt out with them at
+        /// a twentieth, because the scene's sun and ambient were doing the
+        /// work. Dimming the copy's own albedo scales every source at once,
+        /// including the ones this code has no say over.
+        /// </summary>
+        private static void Expose(Stand stand, float exposure)
         {
-            for (int i = 0; i < rig.Lights.Length; i++)
-                rig.Lights[i].intensity = rig.Strength[i] * exposure;
+            for (int i = 0; i < stand.Materials.Length; i++)
+            {
+                if (stand.TintId[i] < 0) continue;
+
+                Color tint = stand.Tint[i];
+                stand.Materials[i].SetColor(
+                    stand.TintId[i],
+                    new Color(tint.r * exposure, tint.g * exposure, tint.b * exposure, tint.a));
+            }
         }
 
         /// <summary>
@@ -619,7 +707,7 @@ namespace PeakMapInteractive.Minimap
         /// the distance. A fixed intensity lights a suitcase properly and
         /// leaves a belltower almost black.
         /// </summary>
-        private static Light AddLight(Transform parent, Vector3 subject, Vector3 offset, float brightness)
+        private static void AddLight(Transform parent, Vector3 subject, Vector3 offset, float brightness)
         {
             float distanceSquared = Mathf.Max(offset.sqrMagnitude, 0.01f);
 
@@ -637,8 +725,6 @@ namespace PeakMapInteractive.Minimap
             light.range = Mathf.Sqrt(distanceSquared) * 4f;
             light.shadows = LightShadows.None;
             light.renderMode = LightRenderMode.ForcePixel;
-
-            return light;
         }
 
         // --- readback --------------------------------------------------------
