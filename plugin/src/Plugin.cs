@@ -90,8 +90,19 @@ namespace PeakMapInteractive
             Run(Pipeline.CaptureRunner.Run());
         }
 
+        /// <summary>
+        /// True once the run is actually being played, not merely loaded.
+        ///
+        /// The loading-screen check is not politeness, it is the difference
+        /// between a photograph and a black square: while the loading screen
+        /// is up the world is not drawn at all, so every capture route —
+        /// render texture, render request, back buffer — comes back empty.
+        /// </summary>
         private static bool IsMapReady()
         {
+            if (LoadingScreenHandler.loading) return false;
+            if (Character.localCharacter == null) return false;
+
             var handler = Zorro.Core.Singleton<MapHandler>.Instance;
             return handler?.segments != null
                    && handler.segments.Length > 0

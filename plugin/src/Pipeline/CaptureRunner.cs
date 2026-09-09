@@ -63,6 +63,46 @@ namespace PeakMapInteractive.Pipeline
             };
 
             DescribeMap(snapshot.Map);
+            OrthoCapture.LogLayers();
+            OrthoCapture.LogLargeRenderers(800f);
+
+            // Dismiss the loading screen before photographing anything.
+            //
+            // While it is up the world is simply not drawn, which is what made
+            // every capture route return black: render texture, render
+            // request, back buffer, purpose-built camera and the game's own.
+            // LoadingScreenHandler.loading going false is not the same thing —
+            // the screen itself lingers, and a screen probe caught the plane
+            // animation rather than a mountain.
+            try
+            {
+                LoadingScreenHandler.KillCurrentLoadingScreen();
+                Plugin.Logger.LogInfo("Dismissed the loading screen.");
+            }
+            catch (Exception e)
+            {
+                Plugin.Logger.LogWarning($"Could not dismiss the loading screen: {e.Message}");
+            }
+
+            yield return OrthoCapture.WaitForWorldToRender(15f);
+
+            // What is actually on screen when a capture begins?
+            if (Plugin.Settings.WriteDiagnostics.Value)
+            {
+                yield return new WaitForEndOfFrame();
+
+                Texture2D probe = ScreenCapture.CaptureScreenshotAsTexture();
+                if (probe != null)
+                {
+                    File.WriteAllBytes(Path.Combine(snapshotDir, "screen-probe.jpg"), probe.EncodeToJPG(85));
+                    Plugin.Logger.LogInfo($"Screen probe written: {probe.width}x{probe.height}.");
+                    UnityEngine.Object.Destroy(probe);
+                }
+                else
+                {
+                    Plugin.Logger.LogWarning("Screen probe returned nothing.");
+                }
+            }
 
             var collector = new MarkerCollector();
 
@@ -120,6 +160,8 @@ namespace PeakMapInteractive.Pipeline
                     Min = SnapshotWriter.Vec3(frame.Min),
                     Max = SnapshotWriter.Vec3(frame.Max)
                 };
+
+                MeshSurvey.Survey(preparer.Root, index, dto.Biome);
 
                 // --- Heightfield ---------------------------------------------
                 Heightfield field = TerrainSampler.Sample(frame, heightRes, layerMask);
@@ -221,7 +263,10 @@ namespace PeakMapInteractive.Pipeline
         {
             int mask = Physics.DefaultRaycastLayers;
 
-            foreach (string layerName in new[] { "Water" })
+            // Water: a world-spanning box at y = -1 that every stray ray hits.
+            // InvisWall: the invisible barriers around a segment, which the
+            // viewer would otherwise render as broad flat sheets of "ground".
+            foreach (string layerName in new[] { "Water", "InvisWall" })
             {
                 int layer = LayerMask.NameToLayer(layerName);
                 if (layer < 0) continue;
