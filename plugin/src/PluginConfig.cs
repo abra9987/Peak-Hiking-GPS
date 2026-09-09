@@ -43,21 +43,27 @@ namespace PeakMapInteractive
         public PluginConfig(ConfigFile cfg)
         {
             CaptureHotkey = cfg.Bind(
-                "Automation", "CaptureHotkey", UnityEngine.KeyCode.F9,
-                "Captures the current map when pressed. Works whether or not AutoRun is on.");
+                "Automation", "CaptureHotkey", UnityEngine.KeyCode.None,
+                "Exports the whole mountain to disk when pressed. Unbound by default: it " +
+                "borrows the camera, hides scenery and writes hundreds of megabytes, none of " +
+                "which anybody wants from a stray keypress mid-climb. Bind it to F9 to use it.");
 
             OutputDirectory = cfg.Bind(
                 "Output", "Directory", "capture-output",
                 "Where snapshots are written. Relative paths resolve against the PEAK install folder.");
 
             AutoRun = cfg.Bind(
-                "Automation", "AutoRun", true,
-                "Automatically go offline, start a solo run and capture without any input. " +
-                "Turn off to capture manually via the Capture hotkey.");
+                "Automation", "AutoRun", false,
+                "Take the game over: go offline, start a solo run on its own, and capture or " +
+                "photograph without anybody at the keyboard. Off by default and it must stay " +
+                "that way — somebody who installs this mod to get a map is not expecting it " +
+                "to seize their session and quit the game. For developing the mod, not for " +
+                "playing it.");
 
             QuitWhenDone = cfg.Bind(
-                "Automation", "QuitWhenDone", true,
-                "Quit the game once a snapshot is written. Required for scheduled captures.");
+                "Automation", "QuitWhenDone", false,
+                "Quit the game once the automated work is finished. Only ever does anything " +
+                "under AutoRun, and off by default for the same reason AutoRun is.");
 
             QuietCapture = cfg.Bind(
                 "Automation", "QuietCapture", true,
@@ -83,7 +89,7 @@ namespace PeakMapInteractive
                 "at the very edge is not clipped.");
 
             ExportMeshes = cfg.Bind(
-                "Mesh", "ExportMeshes", true,
+                "Mesh", "ExportMeshes", false,
                 "Export the segment's real geometry, so caves and overhangs survive. " +
                 "A heightfield cannot represent them at all.");
 

@@ -37,8 +37,21 @@ namespace PeakMapInteractive
             OutputDir = ResolveOutputDir(Settings.OutputDirectory.Value);
             Directory.CreateDirectory(OutputDir);
 
-            _harmony = new Harmony(Guid);
-            _harmony.PatchAll(typeof(Plugin).Assembly);
+            // Patched only when the automation is actually wanted.
+            //
+            // Everything the mod does for a player it does by reading and
+            // drawing: a camera of its own, a canvas of its own, and nothing
+            // written back. The one exception is the automation, which patches
+            // the main menu and the loading routine to drive the game itself —
+            // so with it off, nothing of PEAK's is touched at all. That matters
+            // most in company: a mod that installs no patches cannot break
+            // somebody else's session, and cannot be blamed for it either.
+            if (Settings.AutoRun.Value)
+            {
+                _harmony = new Harmony(Guid);
+                _harmony.PatchAll(typeof(Plugin).Assembly);
+                Logger.LogWarning("AutoRun is on: the game will be driven automatically.");
+            }
 
             if (Settings.AutoRun.Value && Settings.QuietCapture.Value)
             {

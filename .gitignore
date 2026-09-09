@@ -27,3 +27,6 @@ web/public/data/
 
 # --- Local config ---
 tools/local.env
+
+# Packaged mod releases, rebuilt by tools/package.ps1 whenever they are wanted.
+dist/
