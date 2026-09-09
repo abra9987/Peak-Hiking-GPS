@@ -442,10 +442,17 @@ namespace PeakMapInteractive.Minimap
             _compass.gameObject.SetActive(true);
 
             Vector3 delta = target - player.Center;
-            // Bearing measured clockwise from north, which is what the map's
-            // fixed orientation means by "up".
+
+            // Relative to where the player is looking, not to north. A held
+            // compass points ahead of you and swings as you turn; measuring it
+            // in the map's fixed frame left the needle motionless through a
+            // full spin, which is not what a compass does.
             float bearing = Mathf.Atan2(delta.x, delta.z) * Mathf.Rad2Deg;
-            _compass.localRotation = Quaternion.Euler(0f, 0f, -bearing);
+            float facing = MainCamera.instance != null
+                ? MainCamera.instance.transform.eulerAngles.y
+                : 0f;
+
+            _compass.localRotation = Quaternion.Euler(0f, 0f, -(bearing - facing));
         }
 
         private bool TryNearestLoot(Vector3 from, out Vector3 position, out float distance)
@@ -561,9 +568,29 @@ namespace PeakMapInteractive.Minimap
             {
                 if (collider == null) continue;
 
-                // A chest's collider sits on a child called something like
-                // "Collider" while the name that identifies it is on a parent,
-                // so testing the collider's own object found nothing at all.
+                // Chests are found by their component rather than by name.
+                // Name matching also caught every loose pickup lying around,
+                // and the map is meant to show what is worth walking to, not
+                // every object in the world.
+                Luggage chest = collider.GetComponentInParent<Luggage>();
+                if (chest != null)
+                {
+                    // An opened chest has already been looted; leaving it on
+                    // the map sends you to something with nothing in it.
+                    if (chest.IsOpen) continue;
+                    if (!seen.Add(chest.gameObject.GetInstanceID())) continue;
+
+                    _sightings.Add(new MarkerSighting
+                    {
+                        World = chest.transform.position,
+                        Colour = new Color(1f, 0.72f, 0.25f),
+                        IsLoot = true
+                    });
+
+                    if (_sightings.Count >= MaxMarkers) return;
+                    continue;
+                }
+
                 GameObject go = Identify(collider.gameObject, out Color colour, out bool isLoot);
                 if (go == null) continue;
                 if (!seen.Add(go.GetInstanceID())) continue;
@@ -615,14 +642,15 @@ namespace PeakMapInteractive.Minimap
                 return false;
             }
 
-            // Loot is what the distance readout tracks: things worth a detour.
-            if (name.Contains("luggage")) { colour = new Color(1f, 0.72f, 0.25f); isLoot = true; return true; }
-            if (name.Contains("amulet")) { colour = new Color(0.3f, 1f, 0.55f); isLoot = true; return true; }
+            // Chests are handled by component above. What is left here are
+            // landmarks: fixed things worth steering by, never loose pickups.
+            if (name.Contains("luggage")) { colour = default; return false; }
 
             if (name.Contains("bell")) { colour = new Color(0.72f, 0.45f, 1f); return true; }
             if (name.Contains("campfire")) { colour = new Color(1f, 0.45f, 0.2f); return true; }
             if (name.Contains("tomb")) { colour = new Color(0.7f, 0.75f, 0.8f); return true; }
             if (name.Contains("statue")) { colour = new Color(0.6f, 0.6f, 0.65f); return true; }
+            if (name.Contains("scout statue")) { colour = new Color(0.6f, 0.6f, 0.65f); return true; }
 
             colour = default;
             return false;
