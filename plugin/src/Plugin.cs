@@ -52,10 +52,18 @@ namespace PeakMapInteractive
                 Logger.LogInfo("Quiet capture: audio muted, running in background.");
             }
 
-            // Safe to run alongside a capture: the minimap owns its own camera
-            // and render texture, and a capture blanks every canvas while it
-            // shoots, so the overlay cannot appear in an exported photo.
-            if (Settings.MinimapEnabled.Value)
+            // Never both at once. A capture drives the game itself — it forces
+            // the loading screen away mid-spawn, borrows the camera and quits
+            // when finished — and running that under someone who is playing
+            // leaves the character half-initialised and stuck under the map.
+            if (Settings.AutoRun.Value && Settings.MinimapEnabled.Value)
+            {
+                Logger.LogWarning(
+                    "AutoRun is on, so the minimap stays off: capture automation interrupts " +
+                    "the character's spawn and is not safe to play under.");
+            }
+
+            if (Settings.MinimapEnabled.Value && !Settings.AutoRun.Value)
             {
                 gameObject.AddComponent<Minimap.MinimapController>();
                 Logger.LogInfo($"Minimap enabled (toggle: {Settings.MinimapToggleKey.Value}).");
