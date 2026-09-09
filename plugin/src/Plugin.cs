@@ -40,6 +40,18 @@ namespace PeakMapInteractive
             _harmony = new Harmony(Guid);
             _harmony.PatchAll(typeof(Plugin).Assembly);
 
+            if (Settings.AutoRun.Value && Settings.QuietCapture.Value)
+            {
+                // A scheduled capture should not announce itself. Running in
+                // the background matters as much as the silence: Unity stops
+                // updating an unfocused player otherwise, which would stall the
+                // capture the moment the window loses focus.
+                Application.runInBackground = true;
+                AudioListener.volume = 0f;
+                AudioListener.pause = true;
+                Logger.LogInfo("Quiet capture: audio muted, running in background.");
+            }
+
             Logger.LogInfo($"{Name} {Version} loaded.");
             Logger.LogInfo($"Output directory: {OutputDir}");
             Logger.LogInfo($"Automation: autoRun={Settings.AutoRun.Value}, quitWhenDone={Settings.QuitWhenDone.Value}");
@@ -55,6 +67,13 @@ namespace PeakMapInteractive
         /// </summary>
         private void Update()
         {
+            // The game restores audio settings on scene loads, so silence has
+            // to be re-asserted rather than set once.
+            if (Settings.AutoRun.Value && Settings.QuietCapture.Value && AudioListener.volume != 0f)
+            {
+                AudioListener.volume = 0f;
+            }
+
             if (Pipeline.CaptureRunner.IsRunning) return;
 
             if (Input.GetKeyDown(Settings.CaptureHotkey.Value))

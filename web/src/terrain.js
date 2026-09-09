@@ -32,17 +32,35 @@ export function buildTerrainMesh(terrain, heights, mask, texture) {
     }
   }
 
-  const indices = buildIndices(width, depth, mask);
+  // A downward ray stops at whatever is on top, so a tree canopy or a barrier
+  // becomes a sample tens of metres above the ground beside it. Joining those
+  // to their neighbours extrudes vertical curtains across the map. Cutting the
+  // mesh at implausible slopes leaves the ground surface and drops the props.
+  const maxStep = Math.max(stepX, stepZ) * 10;
+  const indices = buildIndices(width, depth, mask, heights, maxStep);
 
   const geometry = new THREE.BufferGeometry();
   geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
   geometry.setAttribute('uv', new THREE.BufferAttribute(uvs, 2));
   geometry.setIndex(indices);
+
+  // No orthophoto: colour by altitude instead. Combined with the scene lights
+  // shading the real surface normals, this reads as a topographic map — which
+  // suits a climbing game better than a photograph would, since height is the
+  // thing the player is actually reasoning about.
+  if (!texture) {
+    geometry.setAttribute(
+      'color',
+      new THREE.BufferAttribute(elevationColours(heights, mask, terrain), 3),
+    );
+  }
+
   geometry.computeVertexNormals();
   geometry.computeBoundingSphere();
 
   const material = new THREE.MeshStandardMaterial({
     map: texture ?? null,
+    vertexColors: !texture,
     roughness: 0.95,
     metalness: 0.0,
     flatShading: false,
@@ -57,11 +75,56 @@ export function buildTerrainMesh(terrain, heights, mask, texture) {
 }
 
 /**
+ * Altitude ramp: wet sand at sea level through vegetation and rock to snow.
+ *
+ * Stops are placed on the segment's own range rather than an absolute scale,
+ * so a 300 m shore and a 1300 m summit both use the full ramp and stay
+ * readable. Absolute altitude is still available on every marker.
+ */
+const RAMP = [
+  [0.0, [0.42, 0.40, 0.31]],
+  [0.12, [0.36, 0.42, 0.25]],
+  [0.35, [0.31, 0.38, 0.22]],
+  [0.58, [0.44, 0.40, 0.32]],
+  [0.76, [0.52, 0.50, 0.48]],
+  [0.9, [0.78, 0.79, 0.82]],
+  [1.0, [0.95, 0.96, 0.98]],
+];
+
+function elevationColours(heights, mask, terrain) {
+  const colours = new Float32Array(heights.length * 3);
+  const span = Math.max(1e-6, terrain.heightMax - terrain.heightMin);
+
+  for (let i = 0; i < heights.length; i++) {
+    if (!mask[i]) continue;
+
+    const t = Math.min(1, Math.max(0, (heights[i] - terrain.heightMin) / span));
+
+    let lo = RAMP[0];
+    let hi = RAMP[RAMP.length - 1];
+    for (let s = 0; s < RAMP.length - 1; s++) {
+      if (t >= RAMP[s][0] && t <= RAMP[s + 1][0]) {
+        lo = RAMP[s];
+        hi = RAMP[s + 1];
+        break;
+      }
+    }
+
+    const k = hi[0] === lo[0] ? 0 : (t - lo[0]) / (hi[0] - lo[0]);
+    colours[i * 3] = lo[1][0] + (hi[1][0] - lo[1][0]) * k;
+    colours[i * 3 + 1] = lo[1][1] + (hi[1][1] - lo[1][1]) * k;
+    colours[i * 3 + 2] = lo[1][2] + (hi[1][2] - lo[1][2]) * k;
+  }
+
+  return colours;
+}
+
+/**
  * Emits two triangles per grid cell, but only where all four corners have
  * data. Winding is chosen so face normals point up (+Y) — get it backwards and
  * computeVertexNormals lights the whole mountain from underneath.
  */
-function buildIndices(width, depth, mask) {
+function buildIndices(width, depth, mask, heights, maxStep) {
   const cells = (width - 1) * (depth - 1);
   const indices = new Uint32Array(cells * 6);
   let n = 0;
@@ -74,6 +137,15 @@ function buildIndices(width, depth, mask) {
       const d = c + 1;
 
       if (!mask[a] || !mask[b] || !mask[c] || !mask[d]) continue;
+
+      const ha = heights[a];
+      const hb = heights[b];
+      const hc = heights[c];
+      const hd = heights[d];
+
+      const lo = Math.min(ha, hb, hc, hd);
+      const hi = Math.max(ha, hb, hc, hd);
+      if (hi - lo > maxStep) continue; // a cliff this steep is a prop, not ground
 
       indices[n++] = a; indices[n++] = b; indices[n++] = c;
       indices[n++] = b; indices[n++] = d; indices[n++] = c;

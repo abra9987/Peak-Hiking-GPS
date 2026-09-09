@@ -62,21 +62,30 @@ cd web && npm install && npm run dev
 
 ## Capturing a real map
 
-Requires PEAK, [BepInEx 5](https://github.com/BepInEx/BepInEx) (Mono build), and
-the [.NET SDK](https://dotnet.microsoft.com/download) 8 or newer.
+Requires PEAK and the [.NET SDK](https://dotnet.microsoft.com/download) 8 or
+newer. BepInEx is installed for you, into a copy of the game.
 
 ```bash
-# Build and deploy the plugin (it finds PEAK and installs itself)
+# One-off: clone the game (~5 GB), add BepInEx, write a config
+pwsh -File tools/setup-clone.ps1
+
+# Build the plugin; it installs itself into the clone
 dotnet build plugin/PeakMapInteractive.csproj -c Release
 
-# Launch, capture, validate, stage for the web client
+# Capture, validate, stage for the web client
 pwsh -File tools/capture.ps1
 ```
 
-The plugin drives the game itself: offline mode, solo run, capture, quit. With
-`AutoRun` disabled in `BepInEx/config/dev.peakmapinteractive.capture.cfg` it
-stays inert and captures only on the hotkey (F9 by default), so it is safe to
-leave installed while playing.
+**Your Steam install is never touched.** Captures run against a private clone,
+so the copy you play stays completely stock: no mod loader, nothing that could
+matter when playing with other people, and no chance of a scheduled capture
+starting mid-session. The clone carries a `steam_appid.txt` so it runs directly
+instead of bouncing the launch back to the Steam copy.
+
+The capture is meant to be unobtrusive: the clone starts muted, in a small
+window moved off-screen, plays itself through to a loaded run, measures every
+segment and quits. It cannot be truly headless — reading pixels back needs a
+real GPU surface, and `-batchmode -nographics` would leave nothing to read.
 
 Automating the daily reset — the map turns over at **17:00 UTC** — is covered in
 [`docs/AUTOMATION.md`](docs/AUTOMATION.md).
@@ -94,19 +103,42 @@ ever wants an old one back, so committing it only inflates the clone. See
 
 ## Status
 
-Working and verified: data format, viewer, terrain and marker rendering,
-publishing, format fixture.
+Working end to end against the live game. Verified on PEAK 2.4.b: the plugin
+builds, drives the game unattended, and captures the real daily map -- terrain
+geometry, altitudes and markers -- which the viewer renders in 3D.
 
-Not yet verified against a live game: the plugin has not been compiled or run
-here — no .NET SDK was available on the machine it was written on. It is built
-against the API surface of a plugin known to work with this game version, but
-treat the first run as commissioning, not as a regression test. Enable
-`WriteDiagnostics` for that run: it lists every component type the marker
-registry did not recognise, which is the fastest way to find what PEAK 2.4.b
-calls things.
+**How the daily map actually works.** The server hands out a `levelIndex` that
+advances once every 24 hours from 2025-06-14 17:00 UTC, and the game loads
+`ScenePaths[levelIndex % 21]`. The maps are pre-baked scenes shipped inside the
+game: the server contributes one integer, nothing more. There are **21 maps in
+the whole rotation**, and every snapshot records which one it is
+(`map.levelIndex`, `map.sceneName`, `map.poolIndex`), so a capture can be
+verified rather than trusted.
 
-Known gaps: mushrooms and other run-time food spawn per session rather than per
-day and are not capturable this way; The Klin needs checking.
+That has a consequence worth acting on: the rotation is finite, so it can be
+captured once instead of scraped daily. See "Capture the whole rotation" below.
+
+### Known gaps
+
+- **Orthophoto not captured.** The top-down colour pass renders nothing under
+  the game's URP setup. Diagnosed as far as: the camera is enabled, base type,
+  has a `UniversalRenderer`, and `SubmitRenderRequest` is accepted without
+  error, yet the target stays untouched at any resolution, window state or
+  render path. Snapshots omit `albedo` rather than shipping a black image, and
+  the viewer shades terrain from the heightfield instead.
+- **Barrier surfaces sampled as terrain.** Large flat colliders that are not
+  ground still appear in some segments. The viewer drops implausibly steep
+  cells, which removes tree and prop curtains, but a broad gently-sloped
+  barrier passes that test.
+- **Mushrooms and run-time food** spawn per session rather than per day and are
+  not capturable this way.
+
+### Capture the whole rotation
+
+Because the pool is 21 fixed scenes, the end state is an atlas rather than a
+daily scraper: capture every map once, publish all of them, and let the client
+compute `levelIndex % 21` in the browser. No scheduled game launches, and the
+map for any future date becomes a lookup rather than a wait.
 
 ## Legal
 

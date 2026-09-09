@@ -90,7 +90,13 @@ namespace PeakMapInteractive.Collect
             return false;
         }
 
-        /// <summary>Strips Unity's instantiation suffix from an object name.</summary>
+        /// <summary>
+        /// Strips Unity's bookkeeping from an object name: the "(Clone)"
+        /// instantiation suffix, and the " (2)", " (3)" the editor appends to
+        /// keep sibling names unique. Without the latter the first capture run
+        /// reported "Luggage", "Luggage (1)" and "Luggage (2)" as three
+        /// different kinds of chest.
+        /// </summary>
         public static string CleanTypeName(string objectName)
         {
             if (string.IsNullOrEmpty(objectName)) return "Unknown";
@@ -98,7 +104,25 @@ namespace PeakMapInteractive.Collect
             int clone = objectName.IndexOf("(Clone)", StringComparison.Ordinal);
             if (clone >= 0) objectName = objectName.Substring(0, clone);
 
-            return objectName.Trim();
+            objectName = objectName.Trim();
+
+            // Trailing " (12)" - only when the parenthesised part is all digits,
+            // so a name that genuinely ends in brackets survives.
+            if (objectName.EndsWith(")", StringComparison.Ordinal))
+            {
+                int open = objectName.LastIndexOf(" (", StringComparison.Ordinal);
+                if (open > 0)
+                {
+                    string inner = objectName.Substring(open + 2, objectName.Length - open - 3);
+                    bool allDigits = inner.Length > 0;
+                    for (int i = 0; i < inner.Length && allDigits; i++)
+                        allDigits = char.IsDigit(inner[i]);
+
+                    if (allDigits) objectName = objectName.Substring(0, open).Trim();
+                }
+            }
+
+            return objectName;
         }
     }
 }

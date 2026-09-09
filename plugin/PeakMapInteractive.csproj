@@ -25,20 +25,20 @@
     of the build output; BepInEx resolves them at runtime from the game itself.
   -->
   <ItemGroup>
-    <Reference Include="Assembly-CSharp;Assembly-CSharp-firstpass;Newtonsoft.Json;Zorro.Core.Runtime;PhotonUnityNetworking;PhotonRealtime;Unity.Collections;Unity.Mathematics;Unity.Burst;UnityEngine;UnityEngine.CoreModule;UnityEngine.PhysicsModule;UnityEngine.TerrainModule;UnityEngine.ImageConversionModule;UnityEngine.ScreenCaptureModule;UnityEngine.InputLegacyModule">
+    <Reference Include="Assembly-CSharp;Assembly-CSharp-firstpass;Newtonsoft.Json;Zorro.Core.Runtime;PhotonUnityNetworking;PhotonRealtime;Unity.Collections;Unity.Mathematics;Unity.Burst;UnityEngine;UnityEngine.CoreModule;UnityEngine.PhysicsModule;UnityEngine.TerrainModule;UnityEngine.ImageConversionModule;UnityEngine.ScreenCaptureModule;UnityEngine.InputLegacyModule;UnityEngine.AudioModule;Unity.RenderPipelines.Universal.Runtime;Unity.RenderPipelines.Core.Runtime">
       <HintPath>$(PeakManaged)\%(Identity).dll</HintPath>
       <Private>false</Private>
     </Reference>
   </ItemGroup>
 
-  <!-- Drop the built plugin straight into BepInEx if the game folder is known. -->
+  <!-- Install into the capture clone, never into the copy you play. -->
   <Target Name="DeployToGame" AfterTargets="Build"
-          Condition="'$(PeakDir)' != '' AND Exists('$(PeakDir)\BepInEx\plugins')">
-    <MakeDir Directories="$(PeakDir)\BepInEx\plugins\PeakMapInteractive" />
+          Condition="'$(PeakCaptureDir)' != '' AND Exists('$(PeakCaptureDir)\BepInEx')">
+    <MakeDir Directories="$(PeakCaptureDir)\BepInEx\plugins\PeakMapInteractive" />
     <Copy SourceFiles="$(TargetPath)"
-          DestinationFolder="$(PeakDir)\BepInEx\plugins\PeakMapInteractive"
+          DestinationFolder="$(PeakCaptureDir)\BepInEx\plugins\PeakMapInteractive"
           ContinueOnError="true" />
-    <Message Importance="high" Text="Deployed $(TargetFileName) -> $(PeakDir)\BepInEx\plugins\PeakMapInteractive" />
+    <Message Importance="high" Text="Deployed $(TargetFileName) -> $(PeakCaptureDir)\BepInEx\plugins\PeakMapInteractive" />
   </Target>
 
 </Project>

@@ -28,7 +28,10 @@ namespace PeakMapInteractive.Collect
             var markers = new List<MarkerDto>();
             if (segmentRoot == null) return markers;
 
-            var behaviours = segmentRoot.GetComponentsInChildren<MonoBehaviour>(includeInactive: true);
+            // Active objects only. A segment's hierarchy also holds every
+            // prefab that could have spawned but did not; including those
+            // turned 26 real chests into 404 in the first capture run.
+            var behaviours = segmentRoot.GetComponentsInChildren<MonoBehaviour>(includeInactive: false);
 
             for (int i = 0; i < behaviours.Length; i++)
             {
@@ -36,22 +39,27 @@ namespace PeakMapInteractive.Collect
                 if (behaviour == null) continue;
 
                 GameObject go = behaviour.gameObject;
+                if (!go.activeInHierarchy) continue;
+
                 int id = go.GetInstanceID();
 
                 Type type = behaviour.GetType();
                 string typeName = type.Name;
 
-                if (!MarkerRegistry.TryMatchComponent(typeName, out string kind))
-                {
+                // Component matches are precise and are trusted as-is. The
+                // support-object filter applies only to the loose name-based
+                // fallback below — applying it here too would drop legitimate
+                // matches whose names happen to contain a banned word, such as
+                // GloomSafeZone.
+                if (!MarkerRegistry.TryMatchComponent(typeName, out string kind)
                     // Base classes matter: LuggageBeach and friends derive from
                     // Luggage, so a match higher in the hierarchy still counts.
-                    if (!TryMatchBaseTypes(type, out kind))
+                    && !TryMatchBaseTypes(type, out kind))
+                {
+                    if (IsSupportObject(go.name) || !MarkerRegistry.TryMatchObjectName(go.name, out kind))
                     {
-                        if (!MarkerRegistry.TryMatchObjectName(go.name, out kind))
-                        {
-                            Note(typeName);
-                            continue;
-                        }
+                        Note(typeName);
+                        continue;
                     }
                 }
 
@@ -71,6 +79,33 @@ namespace PeakMapInteractive.Collect
             }
 
             return markers;
+        }
+
+        /// <summary>
+        /// Machinery that sits at an item's position without being an item:
+        /// spawners, audio emitters, ambience volumes, triggers, decor.
+        ///
+        /// The name-based fallback is deliberately loose so unknown content
+        /// still shows up, and that looseness is exactly what let
+        /// "LuggageSpawner", "AntlionSFX (3)" and "Tomb Ambience" onto the map
+        /// in the first capture run.
+        /// </summary>
+        private static bool IsSupportObject(string objectName)
+        {
+            string lowered = objectName.ToLowerInvariant();
+
+            return lowered.Contains("spawner")
+                   || lowered.Contains("sfx")
+                   || lowered.Contains("vfx")
+                   || lowered.Contains("ambience")
+                   || lowered.Contains("audio")
+                   || lowered.Contains("sound")
+                   || lowered.Contains("trigger")
+                   || lowered.Contains("particle")
+                   || lowered.Contains("decor")
+                   || lowered.Contains("gizmo")
+                   || lowered.Contains("volume")
+                   || lowered.Contains("zone");
         }
 
         private static bool TryMatchBaseTypes(Type type, out string kind)

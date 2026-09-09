@@ -48,7 +48,7 @@ namespace PeakMapInteractive.Pipeline
             int heightRes = Plugin.Settings.HeightResolution.Value;
             int albedoRes = Plugin.Settings.AlbedoResolution.Value;
             float padding = Plugin.Settings.BoundsPadding.Value;
-            int layerMask = Physics.DefaultRaycastLayers;
+            int layerMask = BuildRaycastMask();
 
             var snapshot = new Snapshot
             {
@@ -61,6 +61,8 @@ namespace PeakMapInteractive.Pipeline
                     RaycastLayerMask = layerMask
                 }
             };
+
+            DescribeMap(snapshot.Map);
 
             var collector = new MarkerCollector();
 
@@ -144,11 +146,17 @@ namespace PeakMapInteractive.Pipeline
 
                 // --- Orthophoto ----------------------------------------------
                 string albedoFile = $"segment_{index}.albedo.jpg";
+                bool albedoWritten = false;
+
                 yield return OrthoCapture.Capture(frame, albedoRes, ~0, texture =>
                 {
+                    // null means the capture produced nothing worth keeping.
+                    if (texture == null) return;
+
                     try
                     {
                         SnapshotWriter.WriteAlbedo(Path.Combine(snapshotDir, albedoFile), texture);
+                        albedoWritten = true;
                     }
                     finally
                     {
@@ -156,13 +164,18 @@ namespace PeakMapInteractive.Pipeline
                     }
                 });
 
-                dto.Albedo = new AlbedoDto
-                {
-                    File = albedoFile,
-                    Resolution = albedoRes,
-                    Origin = SnapshotWriter.Vec2(frame.OriginX, frame.OriginZ),
-                    Size = SnapshotWriter.Vec2(frame.SizeX, frame.SizeZ)
-                };
+                // The orthophoto is optional. Terrain shape, altitudes and
+                // markers are the substance; colour is decoration the client
+                // can derive from the heightfield when it is missing.
+                dto.Albedo = albedoWritten
+                    ? new AlbedoDto
+                    {
+                        File = albedoFile,
+                        Resolution = albedoRes,
+                        Origin = SnapshotWriter.Vec2(frame.OriginX, frame.OriginZ),
+                        Size = SnapshotWriter.Vec2(frame.SizeX, frame.SizeZ)
+                    }
+                    : null;
 
                 // --- Markers -------------------------------------------------
                 dto.Markers = collector.Collect(preparer.Root, index);
@@ -192,6 +205,85 @@ namespace PeakMapInteractive.Pipeline
                 Plugin.Logger.LogInfo("QuitWhenDone is set; exiting.");
                 Application.Quit();
             }
+        }
+
+        /// <summary>
+        /// The layers a surface ray is allowed to hit.
+        ///
+        /// Water is excluded, and it matters more than it sounds: PEAK puts a
+        /// 5000 x 1000 x 5000 box collider named Misc/Water/Collision at
+        /// y = -1 across the whole world. Every ray that misses the mountain
+        /// hits it instead, which reported a flawless "100% coverage" while
+        /// 78% of the segment was actually a flat sheet of sea floor with a
+        /// mountain poking through.
+        /// </summary>
+        private static int BuildRaycastMask()
+        {
+            int mask = Physics.DefaultRaycastLayers;
+
+            foreach (string layerName in new[] { "Water" })
+            {
+                int layer = LayerMask.NameToLayer(layerName);
+                if (layer < 0) continue;
+
+                mask &= ~(1 << layer);
+                Plugin.Logger.LogInfo($"Excluding layer '{layerName}' ({layer}) from surface sampling.");
+            }
+
+            return mask;
+        }
+
+        /// <summary>
+        /// Records which of PEAK's daily maps was captured, and where the
+        /// index came from. See <see cref="MapDto"/> for why that matters.
+        /// </summary>
+        private static void DescribeMap(MapDto map)
+        {
+            map.SceneName = UnityEngine.SceneManagement.SceneManager.GetActiveScene().name;
+
+            try
+            {
+                NextLevelService service = GameHandler.GetService<NextLevelService>();
+                if (service == null)
+                {
+                    map.IndexSource = "unavailable";
+                    return;
+                }
+
+                map.LevelIndex = service.NextLevelIndexOrFallback;
+                map.OfflineLevelIndex = service.OfflineLevelIndex;
+                map.IndexSource = service.HasReceivedLevelIndex ? "server" : "offline";
+
+                if (map.LevelIndex != map.OfflineLevelIndex)
+                {
+                    Plugin.Logger.LogWarning(
+                        $"Level index {map.LevelIndex} ({map.IndexSource}) disagrees with the " +
+                        $"locally computed {map.OfflineLevelIndex}; captured map may not be the one others see.");
+                }
+            }
+            catch (Exception e)
+            {
+                map.IndexSource = "unavailable";
+                Plugin.Logger.LogWarning($"Could not read the level index: {e.Message}");
+            }
+
+            try
+            {
+                string[] scenes = SingletonAsset<MapBaker>.Instance?.ScenePaths;
+                if (scenes != null && scenes.Length > 0)
+                {
+                    map.ScenePoolSize = scenes.Length;
+                    map.PoolIndex = ((map.LevelIndex % scenes.Length) + scenes.Length) % scenes.Length;
+                }
+            }
+            catch (Exception e)
+            {
+                Plugin.Logger.LogWarning($"Could not read the scene pool: {e.Message}");
+            }
+
+            Plugin.Logger.LogInfo(
+                $"Map: scene '{map.SceneName}', levelIndex {map.LevelIndex} (source: {map.IndexSource}), " +
+                $"pool {map.PoolIndex}/{map.ScenePoolSize}.");
         }
 
         private static void WriteDiagnostics(string dir, MarkerCollector collector)

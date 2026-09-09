@@ -11,6 +11,7 @@ namespace PeakMapInteractive
         public readonly ConfigEntry<string> OutputDirectory;
         public readonly ConfigEntry<bool> AutoRun;
         public readonly ConfigEntry<bool> QuitWhenDone;
+        public readonly ConfigEntry<bool> QuietCapture;
         public readonly ConfigEntry<int> HeightResolution;
         public readonly ConfigEntry<int> AlbedoResolution;
         public readonly ConfigEntry<float> BoundsPadding;
@@ -35,6 +36,11 @@ namespace PeakMapInteractive
             QuitWhenDone = cfg.Bind(
                 "Automation", "QuitWhenDone", true,
                 "Quit the game once a snapshot is written. Required for scheduled captures.");
+
+            QuietCapture = cfg.Bind(
+                "Automation", "QuietCapture", true,
+                "During an automatic capture, mute the game and keep it running while unfocused, " +
+                "so a scheduled run does not interrupt whatever you are doing.");
 
             HeightResolution = cfg.Bind(
                 "Capture", "HeightResolution", 1024,

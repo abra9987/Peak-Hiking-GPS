@@ -83,9 +83,11 @@ async function loadSegment(index) {
   disposeSegment();
   state.segmentIndex = index;
 
+  // albedo is optional: a segment whose orthophoto could not be captured is
+  // shaded from its own heightfield instead.
   const [{ heights, mask }, texture] = await Promise.all([
     loadHeightfield(DATA_URL, segment.terrain),
-    loadTexture(`${DATA_URL}/${segment.albedo.file}`),
+    segment.albedo ? loadTexture(`${DATA_URL}/${segment.albedo.file}`) : Promise.resolve(null),
   ]);
 
   state.terrainMesh = buildTerrainMesh(segment.terrain, heights, mask, texture);

@@ -29,6 +29,22 @@
     <PeakManaged>$(PeakDir)\PEAK_Data\Managed</PeakManaged>
   </PropertyGroup>
 
+  <!--
+    Where the built plugin is installed.
+
+    This is deliberately NOT the Steam copy. Captures run against a separate
+    clone of the game so the copy you actually play stays stock: no mod loader,
+    nothing that could matter when playing with other people, and no risk of a
+    scheduled capture colliding with a session. See docs/AUTOMATION.md.
+  -->
+  <PropertyGroup>
+    <PeakCaptureDir Condition="'$(PeakCaptureDir)' == '' AND '$(PEAKMAP_CAPTURE_DIR)' != ''">$(PEAKMAP_CAPTURE_DIR)</PeakCaptureDir>
+    <_CaptureProbe>A:\PeakMapCapture\PEAK</_CaptureProbe>
+    <PeakCaptureDir Condition="'$(PeakCaptureDir)' == '' AND Exists('$(_CaptureProbe)')">$(_CaptureProbe)</PeakCaptureDir>
+    <!-- No clone yet: fall back to the Steam copy so a first build still works. -->
+    <PeakCaptureDir Condition="'$(PeakCaptureDir)' == ''">$(PeakDir)</PeakCaptureDir>
+  </PropertyGroup>
+
   <Target Name="VerifyPeakDir" BeforeTargets="BeforeBuild">
     <Error Condition="'$(PeakDir)' == ''"
            Text="PEAK installation not found. Set PEAK_DIR or pass /p:PeakDir=&quot;...\steamapps\common\PEAK&quot;." />

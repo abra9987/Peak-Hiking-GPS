@@ -12,8 +12,42 @@ namespace PeakMapInteractive.Export
         [JsonProperty("generatedAt")] public string GeneratedAt;
         [JsonProperty("gameVersion")] public string GameVersion;
         [JsonProperty("pluginVersion")] public string PluginVersion = Plugin.Version;
+        [JsonProperty("map")] public MapDto Map = new MapDto();
         [JsonProperty("capture")] public CaptureSettings Capture = new CaptureSettings();
         [JsonProperty("segments")] public List<SegmentDto> Segments = new List<SegmentDto>();
+    }
+
+    /// <summary>
+    /// Which daily map this is.
+    ///
+    /// PEAK picks the day's mountain by <c>levelIndex % scenePool</c>, where
+    /// the index advances once every 24 hours from 2025-06-14 17:00 UTC. The
+    /// index is normally handed out by the server and falls back to a locally
+    /// computed one when offline — and the two can disagree, which is how two
+    /// captures taken minutes apart ended up on different mountains.
+    ///
+    /// Recording it makes a snapshot verifiable: anyone can check which map
+    /// was captured instead of trusting the timestamp.
+    /// </summary>
+    public sealed class MapDto
+    {
+        [JsonProperty("levelIndex")] public int LevelIndex;
+        [JsonProperty("sceneName")] public string SceneName;
+        /// <summary>"server" when the authoritative index was received, else "offline".</summary>
+        [JsonProperty("indexSource")] public string IndexSource;
+        [JsonProperty("offlineLevelIndex")] public int OfflineLevelIndex;
+
+        /// <summary>
+        /// How many maps exist in total.
+        ///
+        /// The day's mountain is <c>levelIndex % scenePoolSize</c> over scenes
+        /// shipped inside the game, so the pool is finite and the whole
+        /// rotation can be captured once instead of scraped daily.
+        /// </summary>
+        [JsonProperty("scenePoolSize")] public int ScenePoolSize;
+
+        /// <summary>Index within the pool: what actually selects the scene.</summary>
+        [JsonProperty("poolIndex")] public int PoolIndex;
     }
 
     public sealed class CaptureSettings

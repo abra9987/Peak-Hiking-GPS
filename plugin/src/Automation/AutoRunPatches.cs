@@ -33,6 +33,33 @@ namespace PeakMapInteractive.Automation
                 LoadingScreen.LoadingScreenType.Basic, null, GoOfflineAndLoadAirport());
         }
 
+        /// <summary>
+        /// Waits until the server-issued level index is available, or until
+        /// <paramref name="timeoutSeconds"/> elapses.
+        /// </summary>
+        private static IEnumerator WaitForLevelIndex(float timeoutSeconds)
+        {
+            float deadline = Time.realtimeSinceStartup + timeoutSeconds;
+
+            while (Time.realtimeSinceStartup < deadline)
+            {
+                NextLevelService service = null;
+                try { service = GameHandler.GetService<NextLevelService>(); }
+                catch { /* service registry not ready yet */ }
+
+                if (service != null && service.HasReceivedLevelIndex)
+                {
+                    Plugin.Logger.LogInfo($"AutoRun: level index {service.NextLevelIndexOrFallback} received.");
+                    yield break;
+                }
+
+                yield return new WaitForSecondsRealtime(0.5f);
+            }
+
+            Plugin.Logger.LogWarning(
+                $"AutoRun: no server level index after {timeoutSeconds:F0}s; using the offline fallback.");
+        }
+
         private static IEnumerator GoOfflineAndLoadAirport()
         {
             yield return MainMenu.DisconnectForOfflineMode();
@@ -72,6 +99,14 @@ namespace PeakMapInteractive.Automation
                 Plugin.Logger.LogWarning("AutoRun: passport found but no check-in kiosk.");
                 yield break;
             }
+
+            // The mountain is chosen by a level index the server hands out.
+            // Starting before it arrives silently falls back to a locally
+            // computed index, and the two can disagree — which is how two
+            // captures minutes apart landed on different maps. Wait for the
+            // authoritative one, but never hang: a captured map labelled
+            // "offline" is more useful than no capture.
+            yield return WaitForLevelIndex(10f);
 
             _kioskTriggered = true;
             Plugin.Logger.LogInfo("AutoRun: airport ready, starting run.");
