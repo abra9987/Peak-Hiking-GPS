@@ -39,6 +39,7 @@ namespace PeakMapInteractive.Minimap
         private RectTransform _panel;
         private RectTransform _playerMarker;
         private TextMeshProUGUI _readout;
+        private RectTransform _compass;
 
         private float _lastAltitude;
         private float _climbRate;
@@ -137,6 +138,38 @@ namespace PeakMapInteractive.Minimap
 
             _playerMarker = CreateArrow(panelObject.transform);
             _readout = CreateReadout(panelObject.transform);
+            _compass = CreateCompass(panelObject.transform);
+        }
+
+        /// <summary>
+        /// A needle that always points at the nearest loot, the way the game's
+        /// own compass points at things rather than at north.
+        ///
+        /// It sits outside the map's edge so it keeps working when the loot is
+        /// beyond the visible area — which is exactly when a direction is worth
+        /// more than a dot.
+        /// </summary>
+        private static RectTransform CreateCompass(Transform parent)
+        {
+            var holder = new GameObject("LootCompass");
+            holder.transform.SetParent(parent, worldPositionStays: false);
+
+            var rect = holder.AddComponent<RectTransform>();
+            rect.anchorMin = rect.anchorMax = new Vector2(0.5f, 0f);
+            rect.pivot = new Vector2(0.5f, 0.5f);
+            rect.anchoredPosition = new Vector2(0f, -62f);
+            rect.sizeDelta = new Vector2(26f, 26f);
+
+            var image = holder.AddComponent<Image>();
+            image.sprite = ArrowSprite();
+            image.color = new Color(1f, 0.72f, 0.25f);
+            image.raycastTarget = false;
+
+            var outline = holder.AddComponent<Outline>();
+            outline.effectColor = new Color(0f, 0f, 0f, 0.9f);
+            outline.effectDistance = new Vector2(2f, -2f);
+
+            return rect;
         }
 
         /// <summary>
@@ -230,6 +263,22 @@ namespace PeakMapInteractive.Minimap
             return _arrow;
         }
 
+        /// <summary>
+        /// A marker with a dark rim. Without one a yellow dot vanishes against
+        /// sand and a purple one against shadow, which defeats the point of
+        /// being able to spot loot from across the map.
+        /// </summary>
+        private static RectTransform CreateOutlinedDot(Transform parent, string name, float size)
+        {
+            RectTransform rect = CreateDot(parent, name, Color.white, size);
+
+            var outline = rect.gameObject.AddComponent<Outline>();
+            outline.effectColor = new Color(0f, 0f, 0f, 0.85f);
+            outline.effectDistance = new Vector2(1.6f, -1.6f);
+
+            return rect;
+        }
+
         private static RectTransform CreateDot(Transform parent, string name, Color colour, float size)
         {
             var dot = new GameObject(name);
@@ -267,6 +316,7 @@ namespace PeakMapInteractive.Minimap
             AimPlayerArrow();
             UpdateMarkers();
             UpdateReadout();
+            UpdateCompass();
         }
 
         /// <summary>
@@ -374,6 +424,49 @@ namespace PeakMapInteractive.Minimap
             _readout.text = line;
         }
 
+        /// <summary>
+        /// Turns the needle towards the nearest loot, in the map's fixed
+        /// north-up frame, and hides it when there is nothing to point at.
+        /// </summary>
+        private void UpdateCompass()
+        {
+            Character player = Character.localCharacter;
+            if (_compass == null || player == null) return;
+
+            if (!TryNearestLoot(player.Center, out Vector3 target, out float _))
+            {
+                _compass.gameObject.SetActive(false);
+                return;
+            }
+
+            _compass.gameObject.SetActive(true);
+
+            Vector3 delta = target - player.Center;
+            // Bearing measured clockwise from north, which is what the map's
+            // fixed orientation means by "up".
+            float bearing = Mathf.Atan2(delta.x, delta.z) * Mathf.Rad2Deg;
+            _compass.localRotation = Quaternion.Euler(0f, 0f, -bearing);
+        }
+
+        private bool TryNearestLoot(Vector3 from, out Vector3 position, out float distance)
+        {
+            position = Vector3.zero;
+            distance = float.MaxValue;
+
+            for (int i = 0; i < _sightings.Count; i++)
+            {
+                if (!_sightings[i].IsLoot) continue;
+
+                float d = Vector3.Distance(from, _sightings[i].World);
+                if (d >= distance) continue;
+
+                distance = d;
+                position = _sightings[i].World;
+            }
+
+            return distance < float.MaxValue;
+        }
+
         private float NearestLootDistance(Vector3 from)
         {
             float best = float.MaxValue;
@@ -431,7 +524,7 @@ namespace PeakMapInteractive.Minimap
         private RectTransform MarkerAt(int index)
         {
             while (_markerPool.Count <= index)
-                _markerPool.Add(CreateDot(_panel, $"Marker{_markerPool.Count}", Color.white, 8f));
+                _markerPool.Add(CreateOutlinedDot(_panel, $"Marker{_markerPool.Count}", 13f));
 
             return _markerPool[index];
         }
@@ -468,10 +561,12 @@ namespace PeakMapInteractive.Minimap
             {
                 if (collider == null) continue;
 
-                GameObject go = collider.gameObject;
+                // A chest's collider sits on a child called something like
+                // "Collider" while the name that identifies it is on a parent,
+                // so testing the collider's own object found nothing at all.
+                GameObject go = Identify(collider.gameObject, out Color colour, out bool isLoot);
+                if (go == null) continue;
                 if (!seen.Add(go.GetInstanceID())) continue;
-
-                if (!TryClassify(go, out Color colour, out bool isLoot)) continue;
 
                 _sightings.Add(new MarkerSighting
                 {
@@ -487,6 +582,27 @@ namespace PeakMapInteractive.Minimap
         /// Recognises the things worth walking towards, by the same names the
         /// export uses, so both halves of the project agree on what counts.
         /// </summary>
+        /// <summary>
+        /// Finds the named object a collider belongs to, walking up until
+        /// something recognisable turns up.
+        /// </summary>
+        private static GameObject Identify(GameObject from, out Color colour, out bool isLoot)
+        {
+            Transform current = from.transform;
+
+            for (int depth = 0; depth < 5 && current != null; depth++)
+            {
+                if (TryClassify(current.gameObject, out colour, out isLoot))
+                    return current.gameObject;
+
+                current = current.parent;
+            }
+
+            colour = default;
+            isLoot = false;
+            return null;
+        }
+
         private static bool TryClassify(GameObject go, out Color colour, out bool isLoot)
         {
             string name = go.name.ToLowerInvariant();
