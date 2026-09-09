@@ -35,6 +35,7 @@ namespace PeakMapInteractive
         public readonly ConfigEntry<bool> MinimapIcons;
         public readonly ConfigEntry<float> MinimapMarkerSize;
         public readonly ConfigEntry<bool> MinimapDumpIcons;
+        public readonly ConfigEntry<bool> MinimapAutoBakeIcons;
         public readonly ConfigEntry<UnityEngine.KeyCode> MinimapBakeAllKey;
         public readonly ConfigEntry<float> MinimapStartDelay;
         public readonly ConfigEntry<int> MinimapIconResolution;
@@ -187,6 +188,13 @@ namespace PeakMapInteractive
                 "Photographs every kind of thing anywhere on the loaded mountain at once, "  +
                 "rather than waiting to walk past one of each. Meant for working on the "  +
                 "icons: the nearest statue can be five minutes of climbing away.");
+
+            MinimapAutoBakeIcons = cfg.Bind(
+                "Minimap", "AutoBakeIcons", false,
+                "With AutoRun on, walk the game into a solo run, photograph every marker " +
+                "icon on the mountain and quit, with nobody at the keyboard. Replaces the " +
+                "map capture for that run. For working on the icons: judging one only " +
+                "needs the PNG, and making one only needs a loaded level.");
 
             MinimapDumpIcons = cfg.Bind(
                 "Debug", "DumpIcons", false,

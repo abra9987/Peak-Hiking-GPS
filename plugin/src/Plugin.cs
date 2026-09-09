@@ -1,4 +1,4 @@
-using System.IO;
+﻿using System.IO;
 using BepInEx;
 using BepInEx.Configuration;
 using BepInEx.Logging;
@@ -59,8 +59,10 @@ namespace PeakMapInteractive
             if (Settings.AutoRun.Value && Settings.MinimapEnabled.Value)
             {
                 Logger.LogWarning(
-                    "AutoRun is on, so the minimap stays off: capture automation interrupts " +
-                    "the character's spawn and is not safe to play under.");
+                    "AutoRun is on, so the minimap stays off: automation interrupts the " +
+                    "character's spawn and is not safe to play under. Icons are still " +
+                    "photographed if AutoBakeIcons is set — that needs the loaded level, " +
+                    "not a working character.");
             }
 
             if (Settings.MinimapEnabled.Value && !Settings.AutoRun.Value)
@@ -106,8 +108,22 @@ namespace PeakMapInteractive
                 return;
             }
 
-            if (!Settings.AutoRun.Value || Pipeline.CaptureRunner.HasCompleted) return;
+            if (!Settings.AutoRun.Value) return;
             if (!IsMapReady()) return;
+
+            // Two things worth doing unattended once a run has loaded, and only
+            // ever one of them: a full capture of the mountain, or a sweep of
+            // every marker icon on it.
+            if (Settings.MinimapAutoBakeIcons.Value)
+            {
+                if (Automation.IconRun.HasCompleted) return;
+
+                Logger.LogInfo("AutoRun: map is ready, photographing icons.");
+                Run(Automation.IconRun.Run());
+                return;
+            }
+
+            if (Pipeline.CaptureRunner.HasCompleted) return;
 
             Logger.LogInfo("AutoRun: map is ready, starting capture.");
             Run(Pipeline.CaptureRunner.Run());

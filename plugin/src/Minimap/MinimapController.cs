@@ -950,7 +950,7 @@ namespace PeakMapInteractive.Minimap
         /// at getting a statue to look right. The whole level is already in
         /// memory, so there is nothing to walk to.
         /// </summary>
-        private static void BakeEverything()
+        internal static void BakeEverything()
         {
             int asked = 0;
 
@@ -983,7 +983,9 @@ namespace PeakMapInteractive.Minimap
                 }
             }
 
-            Plugin.Logger.LogInfo($"Minimap: asked for {asked} icon(s) across the whole level.");
+            Plugin.Logger.LogInfo(
+                $"Minimap: found {asked} thing(s) worth an icon across the whole level, " +
+                $"{IconBaker.Pending} kind(s) of them new.");
         }
 
         private static int Sweep(Transform branch)

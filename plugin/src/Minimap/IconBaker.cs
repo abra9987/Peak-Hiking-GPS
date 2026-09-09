@@ -45,6 +45,16 @@ namespace PeakMapInteractive.Minimap
         private const float Reach = 12f;
 
         /// <summary>
+        /// How large a thing may be and still be worth a marker.
+        ///
+        /// Landmarks are recognised by name, and names are generous: "Statues"
+        /// turned out to be fifty-seven metres of Citadel masonry and "Floor
+        /// Statues" eighty-four metres of floor. Nothing that size is somewhere
+        /// you navigate to — you are standing in it.
+        /// </summary>
+        private const float TooLarge = 30f;
+
+        /// <summary>
         /// What the exposure loop aims a photograph at, and how dark it will
         /// let one be before re-shooting. There is no matching ceiling: being
         /// pale is not a fault, and levelling afterwards can bring a pale thing
@@ -118,16 +128,21 @@ namespace PeakMapInteractive.Minimap
             public GameObject Root;
             public Bounds Bounds;
             public Material[] Materials;
-            public int[] TintId;
-            public Color[] Tint;
+
+            /// <summary>Every colour each material owns, and what it started at.</summary>
+            public int[][] TintIds;
+            public Color[][] Tints;
         }
 
         /// <summary>
-        /// The property a shader keeps its base colour in, in the order worth
-        /// trying. Anything using none of them cannot be exposed, and falls
-        /// back to whatever light it happens to get.
+        /// Colour properties to reach for when a shader will not say what it
+        /// has. Only a fallback: normally every colour a shader declares is
+        /// found by asking it.
         /// </summary>
-        private static readonly string[] TintNames = { "_BaseColor", "_Color", "_Tint" };
+        private static readonly string[] TintNames =
+        {
+            "_BaseColor", "_Color", "_Tint", "_TopColor", "_Color1", "_Color2", "_Color3", "_Color21"
+        };
 
         /// <summary>What one photograph came back with.</summary>
         private struct Shot
@@ -145,6 +160,12 @@ namespace PeakMapInteractive.Minimap
         /// and for anything that never could be. Callers fall back to the plain
         /// marker, so the map is never waiting on this.
         /// </summary>
+        /// <summary>True while there are still photographs to take.</summary>
+        internal static bool Busy => _working;
+
+        /// <summary>How many distinct kinds of thing have ever been asked for.</summary>
+        internal static int Pending => _ordered.Count;
+
         internal static Sprite Get(string key)
         {
             if (string.IsNullOrEmpty(key)) return null;
@@ -259,9 +280,11 @@ namespace PeakMapInteractive.Minimap
             // white one — and the icon is baked once and kept, so there is no
             // second chance later.
             var shot = default(Shot);
+            var best = default(Shot);
             float exposure = 1f;
             float lastExposure = 0f;
             float lastAverage = 0f;
+            bool flattened = false;
 
             for (int attempt = 1; attempt <= 5; attempt++)
             {
@@ -285,6 +308,12 @@ namespace PeakMapInteractive.Minimap
 
                 shot = Compose(onBlack, onWhite);
 
+                // Kept whatever happens next. Every later attempt is an
+                // experiment, and an experiment that makes the picture worse
+                // should cost nothing: falling back to unlit rescued a scout
+                // statue and ruined a marble one that was already fine.
+                if (best.Pixels == null || Fault(shot) < Fault(best)) best = shot;
+
                 if (shot.Drawn == 0 || shot.Drawn == shot.Pixels.Length) break;
 
                 // Judged on burnt-out pixels and on darkness, not on the
@@ -295,6 +324,32 @@ namespace PeakMapInteractive.Minimap
                 // object with no light on it at all.
                 float burnt = (float)shot.Clipped / shot.Drawn;
                 if (burnt <= 0.12f && shot.Average >= Floor) break;
+
+                // A shader that declares a base colour and then pays it no
+                // attention leaves the exposure loop pushing on nothing:
+                // "Statues" went from full brightness to three thousandths and
+                // moved from 252.0 to 251.8. When two attempts have changed
+                // nothing, stop arguing with the shader and replace it.
+                // Only for a picture that is genuinely ruined. A statue at
+                // fourteen per cent burnt out is not accepted and is also not
+                // worth gambling on.
+                if (!flattened && attempt >= 2 && burnt > 0.35f
+                    && Mathf.Abs(shot.Average - lastAverage) < 3f)
+                {
+                    flattened = Flatten(stand);
+
+                    if (flattened)
+                    {
+                        Plugin.Logger.LogInfo(
+                            $"Minimap: '{order.Key}' ignores its own colour; " +
+                            "photographing it unlit instead.");
+
+                        exposure = 1f;
+                        lastExposure = 0f;
+                        lastAverage = 0f;
+                        continue;
+                    }
+                }
 
                 float next = Correct(exposure, shot.Average, lastExposure, lastAverage);
 
@@ -307,7 +362,7 @@ namespace PeakMapInteractive.Minimap
                     $"{burnt * 100f:0.#}% burnt out on attempt {attempt}; re-exposing at {exposure:0.###}x.");
             }
 
-            Sprite icon = Finish(order.Key, shot);
+            Sprite icon = Finish(order.Key, best);
 
             Watch(null);
 
@@ -332,6 +387,24 @@ namespace PeakMapInteractive.Minimap
                 $"({(int)icon.rect.width}x{(int)icon.rect.height}).");
 
             if (Plugin.Settings.MinimapDumpIcons.Value) Dump(order.Key, icon);
+        }
+
+        /// <summary>
+        /// How wrong a photograph is, so two of them can be compared.
+        ///
+        /// Burning out counts for three times as much as coming out dark,
+        /// because darkness can be stretched back afterwards and a clipped
+        /// pixel is gone for good.
+        /// </summary>
+        private static float Fault(Shot shot)
+        {
+            if (shot.Pixels == null) return float.MaxValue;
+            if (shot.Drawn == 0 || shot.Drawn == shot.Pixels.Length) return float.MaxValue;
+
+            float burnt = (float)shot.Clipped / shot.Drawn;
+            float dark = Mathf.Max(0f, Floor - shot.Average) / Floor;
+
+            return burnt * 3f + dark;
         }
 
         /// <summary>
@@ -484,35 +557,56 @@ namespace PeakMapInteractive.Minimap
 
             if (!any)
             {
+                // Worth saying out loud. A sweep of the whole level came back
+                // with three icons out of hundreds of requests and no
+                // complaint, because everything that failed failed here: an
+                // object whose segment has not streamed in yet has renderers,
+                // and every one of them is inactive.
+                Plugin.Logger.LogWarning(
+                    $"Minimap: nothing to photograph on '{source.name}' — " +
+                    (far > 0 ? $"all {far} renderer(s) were too far from it to count." : "it has no active renderers."));
+
                 UnityEngine.Object.Destroy(stand);
                 return null;
             }
 
-            var tintId = new int[materials.Count];
-            var tint = new Color[materials.Count];
+            var tintIds = new int[materials.Count][];
+            var tints = new Color[materials.Count][];
             int exposable = 0;
 
             for (int i = 0; i < materials.Count; i++)
             {
-                tintId[i] = TintOf(materials[i]);
-                if (tintId[i] < 0) continue;
+                tintIds[i] = ColoursOf(materials[i]);
+                tints[i] = new Color[tintIds[i].Length];
 
-                tint[i] = materials[i].GetColor(tintId[i]);
-                exposable++;
+                for (int c = 0; c < tintIds[i].Length; c++)
+                    tints[i][c] = materials[i].GetColor(tintIds[i][c]);
+
+                exposable += tintIds[i].Length;
+            }
+
+            if (bounds.size.magnitude > TooLarge)
+            {
+                Plugin.Logger.LogInfo(
+                    $"Minimap: '{source.name}' is {bounds.size.magnitude:0} metres across — " +
+                    "that is scenery to stand in, not a landmark to walk to.");
+
+                UnityEngine.Object.Destroy(stand);
+                return null;
             }
 
             Plugin.Logger.LogInfo(
                 $"Minimap: '{source.name}' copied as {stand.transform.childCount} renderer(s)" +
                 (far > 0 ? $", {far} left behind as scenery" : "") +
-                $", {exposable} of {materials.Count} material(s) can be exposed.");
+                $", {exposable} colour(s) across {materials.Count} material(s) to expose.");
 
             return new Stand
             {
                 Root = stand,
                 Bounds = bounds,
                 Materials = materials.ToArray(),
-                TintId = tintId,
-                Tint = tint
+                TintIds = tintIds,
+                Tints = tints
             };
         }
 
@@ -534,6 +628,79 @@ namespace PeakMapInteractive.Minimap
             }
 
             return copies;
+        }
+
+        /// <summary>
+        /// Re-shades the copy with a plain unlit shader, keeping its texture.
+        ///
+        /// The last resort, for materials that will not answer to anything: no
+        /// lighting to blow out, no highlight, and a base colour that is
+        /// definitely used, so exposure becomes a real control again. It costs
+        /// the model's shading, which at map size is a smaller loss than a
+        /// white blob.
+        /// </summary>
+        private static bool Flatten(Stand stand)
+        {
+            Shader unlit = Shader.Find("Universal Render Pipeline/Unlit")
+                           ?? Shader.Find("Unlit/Texture")
+                           ?? Shader.Find("Sprites/Default");
+
+            if (unlit == null)
+            {
+                Plugin.Logger.LogWarning("Minimap: no unlit shader is loaded to fall back to.");
+                return false;
+            }
+
+            int baseMap = Shader.PropertyToID("_BaseMap");
+            int mainTex = Shader.PropertyToID("_MainTex");
+
+            // Unlit shows a texture and nothing else. A material that has none
+            // comes back as a flat white silhouette, which is how a marble
+            // statue and a bell both turned into blank shapes.
+            bool textured = false;
+
+            foreach (Material material in stand.Materials)
+            {
+                if (material == null) continue;
+                if (material.HasProperty(baseMap) && material.GetTexture(baseMap) != null) textured = true;
+                if (material.HasProperty(mainTex) && material.GetTexture(mainTex) != null) textured = true;
+            }
+
+            if (!textured)
+            {
+                Plugin.Logger.LogInfo("Minimap: nothing to fall back to — these materials carry no texture.");
+                return false;
+            }
+
+            for (int i = 0; i < stand.Materials.Length; i++)
+            {
+                Material material = stand.Materials[i];
+                if (material == null) continue;
+
+                Texture texture =
+                    material.HasProperty(baseMap) ? material.GetTexture(baseMap) :
+                    material.HasProperty(mainTex) ? material.GetTexture(mainTex) : null;
+
+                material.shader = unlit;
+
+                if (texture != null)
+                {
+                    if (material.HasProperty(baseMap)) material.SetTexture(baseMap, texture);
+                    if (material.HasProperty(mainTex)) material.SetTexture(mainTex, texture);
+                }
+
+                // The colour it started with, not white: the unlit shader
+                // multiplies the texture by it, and forcing white throws away
+                // whatever tint the original was applying.
+                Color started = stand.Tints[i].Length > 0 ? stand.Tints[i][0] : Color.white;
+
+                stand.TintIds[i] = ColoursOf(material);
+                stand.Tints[i] = new Color[stand.TintIds[i].Length];
+
+                for (int c = 0; c < stand.TintIds[i].Length; c++) stand.Tints[i][c] = started;
+            }
+
+            return true;
         }
 
         /// <summary>
@@ -564,15 +731,45 @@ namespace PeakMapInteractive.Minimap
             if (material.HasProperty(id)) material.SetFloat(id, value);
         }
 
-        private static int TintOf(Material material)
+        /// <summary>
+        /// Every colour a material's shader declares.
+        ///
+        /// Dimming just the base colour was not enough, and PEAK's own rock
+        /// shader is why: it blends _Color1, _Color21, _Color3, _TopColor and
+        /// _Tint into what you actually see, so turning one of them down moved
+        /// a scout statue from 245 to 239 and no further. Asking the shader
+        /// what it has beats guessing at names, and covers whatever the game
+        /// adds next.
+        /// </summary>
+        private static int[] ColoursOf(Material material)
         {
+            var ids = new List<int>();
+
+            try
+            {
+                Shader shader = material.shader;
+
+                for (int i = 0; i < shader.GetPropertyCount(); i++)
+                {
+                    if (shader.GetPropertyType(i) != UnityEngine.Rendering.ShaderPropertyType.Color) continue;
+
+                    ids.Add(shader.GetPropertyNameId(i));
+                }
+            }
+            catch (System.Exception error)
+            {
+                Plugin.Logger.LogWarning($"Minimap: could not read the shader's colours: {error.Message}");
+            }
+
+            if (ids.Count > 0) return ids.ToArray();
+
             foreach (string name in TintNames)
             {
                 int id = Shader.PropertyToID(name);
-                if (material.HasProperty(id)) return id;
+                if (material.HasProperty(id)) ids.Add(id);
             }
 
-            return -1;
+            return ids.ToArray();
         }
 
         /// <summary>
@@ -800,12 +997,15 @@ namespace PeakMapInteractive.Minimap
         {
             for (int i = 0; i < stand.Materials.Length; i++)
             {
-                if (stand.TintId[i] < 0) continue;
+                if (stand.Materials[i] == null) continue;
 
-                Color tint = stand.Tint[i];
-                stand.Materials[i].SetColor(
-                    stand.TintId[i],
-                    new Color(tint.r * exposure, tint.g * exposure, tint.b * exposure, tint.a));
+                for (int c = 0; c < stand.TintIds[i].Length; c++)
+                {
+                    Color tint = stand.Tints[i][c];
+                    stand.Materials[i].SetColor(
+                        stand.TintIds[i][c],
+                        new Color(tint.r * exposure, tint.g * exposure, tint.b * exposure, tint.a));
+                }
             }
         }
 
