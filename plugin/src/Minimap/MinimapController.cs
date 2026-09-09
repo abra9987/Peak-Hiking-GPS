@@ -249,16 +249,19 @@ namespace PeakMapInteractive.Minimap
             _playerMarker = CreateArrow(markerObject.transform);
             _readout = CreateReadout(screenObject.transform, size);
 
-            // Buttons before the case, so the case is what shapes them. The
-            // recesses are holes straight through the drawing, so a button
-            // that merely fits one leaves its corners open to whatever is
-            // behind the device, and pushing it down on a press opened a gap
-            // along the top. Sat behind the case and drawn oversized, it covers
-            // the hole with room to spare and the hole's own edge trims it.
-            BuildButtons(deviceObject.transform);
-
             Cover(deviceObject.transform, "Glass", Navigator.Glass);
             Cover(deviceObject.transform, "Body", Navigator.Body);
+
+            // Buttons last, so they sit on the case rather than in it.
+            //
+            // The recesses are holes straight through the drawing, so a face
+            // that merely fits one leaves its corners open to the mountain
+            // behind. Putting the faces behind the case closed that and cost
+            // the thing it was for: framed by the hole, a button reads as
+            // sunken. Drawn on top and larger than its hole, it covers the hole
+            // outright and its own rim lands on the case, which is what a
+            // button standing proud of a panel looks like.
+            BuildButtons(deviceObject.transform);
 
             if (!Navigator.Available)
                 Plugin.Logger.LogWarning("Minimap: the navigator artwork did not load; the map is on its own.");
@@ -268,12 +271,11 @@ namespace PeakMapInteractive.Minimap
         /// How much wider than its recess a button face is drawn, and how far
         /// it shrinks when pressed.
         ///
-        /// Both states have to stay larger than the hole, because the hole goes
-        /// straight through the drawing: anything the face does not cover shows
-        /// the mountain through it. Sitting behind the case, the surplus is
-        /// invisible — the hole's edge trims the face — so all a press changes
-        /// is how much of the glyph the window shows, which is what a button
-        /// being pushed in looks like.
+        /// Both states stay larger than the hole, because the hole goes
+        /// straight through the drawing and anything the face does not cover
+        /// shows the mountain through it. Pressed is 1.06 of the hole and at
+        /// rest 1.14, so the overhang shrinks by more than half — the face
+        /// visibly settles towards the panel without ever uncovering it.
         /// </summary>
         private const float Overlap = 0.14f;
         private const float PressedScale = 0.93f;
@@ -415,7 +417,7 @@ namespace PeakMapInteractive.Minimap
 
             var strip = stripObject.AddComponent<RectTransform>();
             strip.anchorMin = new Vector2(0f, 0f);
-            strip.anchorMax = new Vector2(1f, 0.2f);
+            strip.anchorMax = new Vector2(1f, 0.155f);
             strip.offsetMin = Vector2.zero;
             strip.offsetMax = Vector2.zero;
 
@@ -435,12 +437,12 @@ namespace PeakMapInteractive.Minimap
             var text = textObject.AddComponent<TextMeshProUGUI>();
             text.font = GameFont();
 
-            // Sized to whatever fits. The line is two numbers wide at the
-            // beach and four in the Citadel, and at a fixed size the long
-            // version ran off the screen and printed across the case.
+            // Sized to whatever fits. The line is short at the beach and long
+            // in the Citadel, and at a fixed size the long version ran off the
+            // screen and printed across the case.
             text.enableAutoSizing = true;
-            text.fontSizeMin = 7f;
-            text.fontSizeMax = Mathf.Max(10f, deviceSize * 0.045f);
+            text.fontSizeMin = 6f;
+            text.fontSizeMax = Mathf.Max(9f, deviceSize * 0.05f);
             text.alignment = TextAlignmentOptions.Center;
             text.color = new Color(0.94f, 0.94f, 0.92f);
             text.raycastTarget = false;
@@ -800,8 +802,10 @@ namespace PeakMapInteractive.Minimap
                     : up < -2 ? $"<color=#E08A7F>{up} m</color>"
                     : "<color=#8A909A>level</color>";
 
-                line += System.Environment.NewLine +
-                        $"<color=#FFB84A>chest {across} m</color>  {height}";
+                // One line, not two. The strip is cut out of the map, and a
+                // second line of it cost twice the view to say something a
+                // glance reads across in one pass anyway.
+                line += $"   <color=#FFB84A>chest {across} m</color> {height}";
             }
 
             _readout.text = line;

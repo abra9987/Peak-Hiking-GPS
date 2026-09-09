@@ -114,6 +114,8 @@ namespace PeakMapInteractive
             if (Settings.ExportMeshes.Value && !Pipeline.CaptureRunner.HasCompleted)
                 Capture.MeshPrimer.Tick();
 
+            if (Input.GetKeyDown(Settings.ScreenshotKey.Value)) Snapshot();
+
             if (Input.GetKeyDown(Settings.CaptureHotkey.Value))
             {
                 Logger.LogInfo("Capture hotkey pressed.");
@@ -169,6 +171,31 @@ namespace PeakMapInteractive
             return handler?.segments != null
                    && handler.segments.Length > 0
                    && handler.segments[0]?.segmentParent != null;
+        }
+
+        /// <summary>
+        /// Saves the screen as it stands, named for the moment it was taken.
+        ///
+        /// The screenshots a mod page needs are the ones taken mid-climb, and
+        /// they are lost by stopping to fight with the clipboard. A key and a
+        /// folder is the whole feature.
+        /// </summary>
+        private static void Snapshot()
+        {
+            try
+            {
+                string folder = Path.Combine(OutputDir, "shots");
+                Directory.CreateDirectory(folder);
+
+                string path = Path.Combine(folder, $"peak-{System.DateTime.Now:yyyyMMdd-HHmmss}.png");
+                ScreenCapture.CaptureScreenshot(path);
+
+                Logger.LogInfo($"Screenshot: {path}");
+            }
+            catch (System.Exception error)
+            {
+                Logger.LogWarning($"Screenshot failed: {error.Message}");
+            }
         }
 
         private void OnDestroy()

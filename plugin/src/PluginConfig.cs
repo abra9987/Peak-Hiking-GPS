@@ -37,6 +37,7 @@ namespace PeakMapInteractive
         public readonly ConfigEntry<bool> MinimapDumpIcons;
         public readonly ConfigEntry<bool> MinimapAutoBakeIcons;
         public readonly ConfigEntry<UnityEngine.KeyCode> MinimapBakeAllKey;
+        public readonly ConfigEntry<UnityEngine.KeyCode> ScreenshotKey;
         public readonly ConfigEntry<float> MinimapStartDelay;
         public readonly ConfigEntry<int> MinimapIconResolution;
 
@@ -188,6 +189,12 @@ namespace PeakMapInteractive
                     "buys detail in the mipmaps rather than on screen — which is what stops a " +
                     "suitcase turning to mush at map size.",
                     new AcceptableValueRange<int>(64, 1024)));
+
+            ScreenshotKey = cfg.Bind(
+                "Debug", "ScreenshotKey", UnityEngine.KeyCode.F11,
+                "Saves a full-resolution screenshot to a 'shots' folder in the output " +
+                "directory. Here because the pictures a mod page needs are taken while " +
+                "playing, and stopping to fight the clipboard loses the moment.");
 
             MinimapBakeAllKey = cfg.Bind(
                 "Minimap", "BakeAllKey", UnityEngine.KeyCode.F10,
