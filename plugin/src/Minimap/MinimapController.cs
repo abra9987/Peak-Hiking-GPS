@@ -128,7 +128,54 @@ namespace PeakMapInteractive.Minimap
             image.texture = _target;
             image.raycastTarget = false;
 
-            _playerMarker = CreateDot(panelObject.transform, "You", new Color(1f, 0.55f, 0.2f), 10f);
+            _playerMarker = CreateArrow(panelObject.transform);
+        }
+
+        /// <summary>
+        /// The player is drawn as an arrow, not a dot or a model.
+        ///
+        /// At three hundred metres across, the character model is one or two
+        /// pixels: neither the body nor the face would be legible, and both
+        /// would cost the Character layer sitting between the camera and the
+        /// ground. Which way you are facing is the part that actually helps
+        /// when picking a line, so that is what the marker shows.
+        /// </summary>
+        private static RectTransform CreateArrow(Transform parent)
+        {
+            RectTransform rect = CreateDot(parent, "You", new Color(1f, 0.55f, 0.2f), 16f);
+            rect.GetComponent<Image>().sprite = ArrowSprite();
+            return rect;
+        }
+
+        private static Sprite _arrow;
+
+        private static Sprite ArrowSprite()
+        {
+            if (_arrow != null) return _arrow;
+
+            const int size = 32;
+            var texture = new Texture2D(size, size, TextureFormat.RGBA32, false);
+
+            for (int y = 0; y < size; y++)
+            {
+                for (int x = 0; x < size; x++)
+                {
+                    // A triangle that narrows towards the top of the texture,
+                    // with a notch cut out of the base so it reads as an arrow
+                    // rather than a wedge at small sizes.
+                    float u = (x + 0.5f) / size;
+                    float v = (y + 0.5f) / size;
+                    float halfWidth = 0.5f * (1f - v);
+                    bool inside = Mathf.Abs(u - 0.5f) <= halfWidth && v <= 1f;
+                    bool notch = v < 0.28f && Mathf.Abs(u - 0.5f) < 0.5f * (0.28f - v) / 0.28f * 0.9f;
+
+                    texture.SetPixel(x, y, inside && !notch ? Color.white : Color.clear);
+                }
+            }
+
+            texture.Apply();
+            _arrow = Sprite.Create(texture, new Rect(0, 0, size, size), new Vector2(0.5f, 0.5f));
+            return _arrow;
         }
 
         private static RectTransform CreateDot(Transform parent, string name, Color colour, float size)
@@ -165,6 +212,7 @@ namespace PeakMapInteractive.Minimap
                 _pitchIndex = (_pitchIndex + 1) % Pitches.Length;
 
             Follow();
+            AimPlayerArrow();
             UpdateMarkers();
         }
 
@@ -226,6 +274,21 @@ namespace PeakMapInteractive.Minimap
             _camera.farClipPlane = 4000f;
         }
 
+        /// <summary>
+        /// Turns the arrow to match where the player is looking. The map is
+        /// north-up, so the arrow carries all of the rotation.
+        /// </summary>
+        private void AimPlayerArrow()
+        {
+            if (_playerMarker == null) return;
+
+            MainCamera view = MainCamera.instance;
+            if (view == null) return;
+
+            float yaw = view.transform.eulerAngles.y;
+            _playerMarker.localRotation = Quaternion.Euler(0f, 0f, -yaw);
+        }
+
         // --- markers ---------------------------------------------------------
 
         /// <summary>
@@ -279,6 +342,21 @@ namespace PeakMapInteractive.Minimap
 
             Character player = Character.localCharacter;
             if (player == null) return;
+
+            // Everyone else on the mountain, at any distance: knowing where
+            // the others are is half of why a shared map is worth having.
+            foreach (Character other in Character.AllCharacters)
+            {
+                if (other == null || other == player) continue;
+
+                _sightings.Add(new MarkerSighting
+                {
+                    World = other.Center,
+                    Colour = other.data != null && other.data.dead
+                        ? new Color(0.55f, 0.55f, 0.6f)
+                        : new Color(0.35f, 0.75f, 1f)
+                });
+            }
 
             Collider[] nearby = Physics.OverlapSphere(
                 player.Center, _span, ~0, QueryTriggerInteraction.Collide);
