@@ -45,7 +45,7 @@ if (-not $OutputDirectory) { $OutputDirectory = Join-Path $repo 'dist' }
 $version = ([xml](Get-Content $project)).Project.PropertyGroup.Version | Where-Object { $_ }
 if (-not $version) { throw "No <Version> in $project" }
 
-Write-Host "Peak Map Interactive $version" -ForegroundColor Cyan
+Write-Host "Hiking GPS $version" -ForegroundColor Cyan
 
 $dotnet = Join-Path $env:LOCALAPPDATA 'Microsoft\dotnet\dotnet.exe'
 if (-not (Test-Path $dotnet)) { $dotnet = 'dotnet' }
@@ -53,11 +53,11 @@ if (-not (Test-Path $dotnet)) { $dotnet = 'dotnet' }
 & $dotnet build $project -c $Configuration
 if ($LASTEXITCODE -ne 0) { throw 'Build failed.' }
 
-$assembly = Join-Path $repo "plugin\bin\$Configuration\PeakMapInteractive.dll"
+$assembly = Join-Path $repo "plugin\bin\$Configuration\HikingGPS.dll"
 if (-not (Test-Path $assembly)) { throw "Built nothing at $assembly" }
 
 $staging = Join-Path ([System.IO.Path]::GetTempPath()) "peakmap-$version-$(Get-Random)"
-$plugin = Join-Path $staging 'BepInEx\plugins\PeakMapInteractive'
+$plugin = Join-Path $staging 'BepInEx\plugins\HikingGPS'
 
 New-Item -ItemType Directory -Force -Path $plugin | Out-Null
 Copy-Item $assembly $plugin
@@ -66,7 +66,7 @@ $readme = Join-Path $repo 'docs\MOD-README.md'
 if (Test-Path $readme) { Copy-Item $readme (Join-Path $staging 'README.md') }
 
 New-Item -ItemType Directory -Force -Path $OutputDirectory | Out-Null
-$zip = Join-Path $OutputDirectory "PeakMapInteractive-$version.zip"
+$zip = Join-Path $OutputDirectory "HikingGPS-$version.zip"
 
 if (Test-Path $zip) { Remove-Item $zip }
 Compress-Archive -Path (Join-Path $staging '*') -DestinationPath $zip

@@ -15,9 +15,9 @@ namespace PeakMapInteractive
     [BepInProcess("PEAK.exe")]
     public sealed class Plugin : BaseUnityPlugin
     {
-        public const string Guid = "dev.peakmapinteractive.capture";
-        public const string Name = "Peak Map Interactive - Capture";
-        public const string Version = "0.1.0";
+        public const string Guid = "com.abra9987.hikinggps";
+        public const string Name = "Hiking GPS";
+        public const string Version = "1.0.0";
 
         internal static Plugin Instance { get; private set; }
         internal static new ManualLogSource Logger { get; private set; }

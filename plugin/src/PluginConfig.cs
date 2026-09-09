@@ -2,6 +2,15 @@
 
 namespace PeakMapInteractive
 {
+    /// <summary>Which corner of the screen the GPS is pinned to.</summary>
+    internal enum ScreenCorner
+    {
+        TopRight,
+        TopLeft,
+        BottomRight,
+        BottomLeft
+    }
+
     /// <summary>
     /// All tunables live here so a scheduled capture can be reconfigured by
     /// editing the BepInEx config file, without a rebuild.
@@ -26,6 +35,10 @@ namespace PeakMapInteractive
 
         public readonly ConfigEntry<bool> MinimapEnabled;
         public readonly ConfigEntry<float> MinimapSize;
+        public readonly ConfigEntry<ScreenCorner> MinimapCorner;
+        public readonly ConfigEntry<float> MinimapMarginX;
+        public readonly ConfigEntry<float> MinimapMarginY;
+        public readonly ConfigEntry<string> MinimapPlayerColour;
         public readonly ConfigEntry<int> MinimapStartZoom;
         public readonly ConfigEntry<UnityEngine.KeyCode> MinimapToggleKey;
         public readonly ConfigEntry<UnityEngine.KeyCode> MinimapZoomInKey;
@@ -129,6 +142,27 @@ namespace PeakMapInteractive
                 "Minimap", "SizePixels", 320f,
                 new ConfigDescription("On-screen size of the map window.",
                     new AcceptableValueRange<float>(120f, 900f)));
+
+            MinimapCorner = cfg.Bind(
+                "Minimap", "Corner", ScreenCorner.TopRight,
+                "Which corner of the screen the GPS hangs in. Dragging it with the mouse is " +
+                "not offered on purpose: during a run the cursor belongs to the game, and " +
+                "prising it away to move a window is a worse trade than picking a corner once.");
+
+            MinimapMarginX = cfg.Bind(
+                "Minimap", "MarginXPixels", 14f,
+                new ConfigDescription("How far in from the side of the screen.",
+                    new AcceptableValueRange<float>(0f, 600f)));
+
+            MinimapMarginY = cfg.Bind(
+                "Minimap", "MarginYPixels", 14f,
+                new ConfigDescription("How far in from the top or bottom of the screen.",
+                    new AcceptableValueRange<float>(0f, 600f)));
+
+            MinimapPlayerColour = cfg.Bind(
+                "Minimap", "PlayerMarkerColour", "#FF8C33",
+                "The colour of the arrow that is you, as a hex value. Anything the game can " +
+                "read works: #RRGGBB, or #RRGGBBAA to make it see-through.");
 
             MinimapStartZoom = cfg.Bind(
                 "Minimap", "StartZoomStep", 3,

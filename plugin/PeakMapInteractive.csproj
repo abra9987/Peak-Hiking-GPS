@@ -2,9 +2,9 @@
 
   <PropertyGroup>
     <TargetFramework>netstandard2.1</TargetFramework>
-    <AssemblyName>PeakMapInteractive</AssemblyName>
+    <AssemblyName>HikingGPS</AssemblyName>
     <RootNamespace>PeakMapInteractive</RootNamespace>
-    <Version>0.1.0</Version>
+    <Version>1.0.0</Version>
     <LangVersion>latest</LangVersion>
     <Nullable>disable</Nullable>
     <ImplicitUsings>disable</ImplicitUsings>
@@ -45,11 +45,11 @@
   <!-- Install into the capture clone, never into the copy you play. -->
   <Target Name="DeployToGame" AfterTargets="Build"
           Condition="'$(PeakCaptureDir)' != '' AND Exists('$(PeakCaptureDir)\BepInEx')">
-    <MakeDir Directories="$(PeakCaptureDir)\BepInEx\plugins\PeakMapInteractive" />
+    <MakeDir Directories="$(PeakCaptureDir)\BepInEx\plugins\HikingGPS" />
     <Copy SourceFiles="$(TargetPath)"
-          DestinationFolder="$(PeakCaptureDir)\BepInEx\plugins\PeakMapInteractive"
+          DestinationFolder="$(PeakCaptureDir)\BepInEx\plugins\HikingGPS"
           ContinueOnError="true" />
-    <Message Importance="high" Text="Deployed $(TargetFileName) -> $(PeakCaptureDir)\BepInEx\plugins\PeakMapInteractive" />
+    <Message Importance="high" Text="Deployed $(TargetFileName) -> $(PeakCaptureDir)\BepInEx\plugins\HikingGPS" />
   </Target>
 
 </Project>

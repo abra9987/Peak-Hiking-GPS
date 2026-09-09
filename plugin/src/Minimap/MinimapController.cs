@@ -218,10 +218,8 @@ namespace PeakMapInteractive.Minimap
             deviceObject.transform.SetParent(canvasObject.transform, worldPositionStays: false);
 
             _frame = deviceObject.AddComponent<RectTransform>();
-            _frame.anchorMin = _frame.anchorMax = new Vector2(1f, 1f);
-            _frame.pivot = new Vector2(1f, 1f);
-            _frame.anchoredPosition = new Vector2(-14f, -14f);
             _frame.sizeDelta = new Vector2(size * Navigator.Aspect, size);
+            PinToCorner(_frame);
 
             // The screen is added first so that the case and the glass drawn
             // after it land on top: UI draws in the order things were added.
@@ -287,6 +285,28 @@ namespace PeakMapInteractive.Minimap
                 area.yMin - area.height * by,
                 area.xMax + area.width * by,
                 area.yMax + area.height * by);
+
+        /// <summary>
+        /// Hangs the device in whichever corner was asked for.
+        ///
+        /// Anchor, pivot and the sign of the margin all follow from the corner,
+        /// which is why they are worked out together rather than written out
+        /// four times.
+        /// </summary>
+        private static void PinToCorner(RectTransform rect)
+        {
+            ScreenCorner corner = Plugin.Settings.MinimapCorner.Value;
+
+            bool right = corner == ScreenCorner.TopRight || corner == ScreenCorner.BottomRight;
+            bool top = corner == ScreenCorner.TopRight || corner == ScreenCorner.TopLeft;
+
+            var anchor = new Vector2(right ? 1f : 0f, top ? 1f : 0f);
+            rect.anchorMin = rect.anchorMax = rect.pivot = anchor;
+
+            rect.anchoredPosition = new Vector2(
+                (right ? -1f : 1f) * Plugin.Settings.MinimapMarginX.Value,
+                (top ? -1f : 1f) * Plugin.Settings.MinimapMarginY.Value);
+        }
 
         /// <summary>Stretches a rect across a fraction of its parent.</summary>
         private static void Fill(RectTransform rect, Rect area)
@@ -470,9 +490,25 @@ namespace PeakMapInteractive.Minimap
         /// </summary>
         private static RectTransform CreateArrow(Transform parent)
         {
-            RectTransform rect = CreateDot(parent, "You", new Color(1f, 0.55f, 0.2f), 16f);
+            RectTransform rect = CreateDot(parent, "You", PlayerColour(), 16f);
             rect.GetComponent<Image>().sprite = ArrowSprite();
             return rect;
+        }
+
+        /// <summary>
+        /// The colour of the arrow that is you, from the config. Falls back to
+        /// the original orange rather than to nothing, so a typo in the hex
+        /// costs a colour and not the marker.
+        /// </summary>
+        private static Color PlayerColour()
+        {
+            string wanted = Plugin.Settings.MinimapPlayerColour.Value;
+
+            if (!string.IsNullOrWhiteSpace(wanted) && ColorUtility.TryParseHtmlString(wanted.Trim(), out Color colour))
+                return colour;
+
+            Plugin.Logger.LogWarning($"Minimap: '{wanted}' is not a colour; using the default.");
+            return new Color(1f, 0.55f, 0.2f);
         }
 
         private static Sprite _arrow;
