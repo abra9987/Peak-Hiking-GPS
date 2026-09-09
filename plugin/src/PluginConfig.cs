@@ -31,6 +31,7 @@ namespace PeakMapInteractive
         public readonly ConfigEntry<UnityEngine.KeyCode> MinimapZoomInKey;
         public readonly ConfigEntry<UnityEngine.KeyCode> MinimapZoomOutKey;
         public readonly ConfigEntry<UnityEngine.KeyCode> MinimapAngleKey;
+        public readonly ConfigEntry<float> MinimapCompassNeedleOffset;
 
         public PluginConfig(ConfigFile cfg)
         {
@@ -129,6 +130,14 @@ namespace PeakMapInteractive
                 "Cycles the viewing angle: straight down, 75 degrees, 45 degrees. " +
                 "A tilted view shows how much climbing lies between you and somewhere, " +
                 "which looking straight down flattens away.");
+
+            MinimapCompassNeedleOffset = cfg.Bind(
+                "Minimap", "CompassNeedleOffset", 45f,
+                new ConfigDescription(
+                    "Which way the needle already points in the compass artwork, in degrees " +
+                    "clockwise from up. The whole icon is rotated to aim that needle, so this " +
+                    "is what stops it pointing off by a fixed amount.",
+                    new AcceptableValueRange<float>(-180f, 180f)));
 
             WriteDiagnostics = cfg.Bind(
                 "Debug", "WriteDiagnostics", false,

@@ -181,7 +181,7 @@ namespace PeakMapInteractive.Minimap
             rect.anchorMin = rect.anchorMax = new Vector2(0f, 0f);
             rect.pivot = new Vector2(0f, 0f);
             rect.anchoredPosition = new Vector2(8f, 8f);
-            rect.sizeDelta = new Vector2(52f, 52f);
+            rect.sizeDelta = new Vector2(64f, 64f);
 
             var image = holder.AddComponent<Image>();
             image.sprite = CompassSprite() ?? ArrowSprite();
@@ -500,7 +500,13 @@ namespace PeakMapInteractive.Minimap
                 ? MainCamera.instance.transform.eulerAngles.y
                 : 0f;
 
-            _compass.localRotation = Quaternion.Euler(0f, 0f, -(bearing - facing));
+            // The needle is painted into the icon rather than being a separate
+            // part, so the whole thing turns — hat and all, which reads as the
+            // compass being turned in hand. The offset accounts for where that
+            // painted needle already points, without which it would aim wide
+            // by a fixed angle forever.
+            float painted = Plugin.Settings.MinimapCompassNeedleOffset.Value;
+            _compass.localRotation = Quaternion.Euler(0f, 0f, -((bearing - facing) - painted));
         }
 
         private bool TryNearestLoot(Vector3 from, out Vector3 position, out float distance)
