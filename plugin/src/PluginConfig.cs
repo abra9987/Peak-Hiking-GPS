@@ -1,4 +1,4 @@
-using BepInEx.Configuration;
+﻿using BepInEx.Configuration;
 
 namespace PeakMapInteractive
 {
@@ -35,7 +35,8 @@ namespace PeakMapInteractive
         public readonly ConfigEntry<bool> MinimapIcons;
         public readonly ConfigEntry<float> MinimapMarkerSize;
         public readonly ConfigEntry<bool> MinimapDumpIcons;
-        public readonly ConfigEntry<float> MinimapIconDelay;
+        public readonly ConfigEntry<float> MinimapStartDelay;
+        public readonly ConfigEntry<int> MinimapIconResolution;
 
         public PluginConfig(ConfigFile cfg)
         {
@@ -158,14 +159,24 @@ namespace PeakMapInteractive
                     "the picture inside is recognisable is the whole constraint.",
                     new AcceptableValueRange<float>(8f, 48f)));
 
-            MinimapIconDelay = cfg.Bind(
-                "Minimap", "IconDelaySeconds", 10f,
+            MinimapStartDelay = cfg.Bind(
+                "Minimap", "StartDelaySeconds", 10f,
                 new ConfigDescription(
-                    "How long after a run becomes playable before any icon is photographed. " +
-                    "The run opens with the character lying on the beach with their eyes shut " +
-                    "while the world is still being assembled, and an icon is baked once and " +
-                    "kept — so one taken too early is wrong for the rest of the run.",
+                    "How long after the mountain finishes loading before the map opens and " +
+                    "icons are photographed. The run begins with the character lying on the " +
+                    "beach with their eyes shut while the world is still being assembled, and " +
+                    "an icon is baked once and kept, so one taken too early stays wrong for " +
+                    "the rest of the run.",
                     new AcceptableValueRange<float>(0f, 120f)));
+
+            MinimapIconResolution = cfg.Bind(
+                "Minimap", "IconResolutionPixels", 384,
+                new ConfigDescription(
+                    "How many pixels across each marker icon is photographed at, before it is " +
+                    "trimmed to the object. The marker itself is drawn far smaller, so this " +
+                    "buys detail in the mipmaps rather than on screen — which is what stops a " +
+                    "suitcase turning to mush at map size.",
+                    new AcceptableValueRange<int>(64, 1024)));
 
             MinimapDumpIcons = cfg.Bind(
                 "Debug", "DumpIcons", false,

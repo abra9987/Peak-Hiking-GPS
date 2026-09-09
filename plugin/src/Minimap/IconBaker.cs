@@ -30,8 +30,6 @@ namespace PeakMapInteractive.Minimap
     /// </summary>
     internal static class IconBaker
     {
-        private const int Resolution = 128;
-
         /// <summary>
         /// A ceiling on how many distinct icons are kept, in case a map turns
         /// out to have far more named variants than expected. Each one is a
@@ -47,6 +45,29 @@ namespace PeakMapInteractive.Minimap
         private const float Reach = 12f;
 
         /// <summary>
+        /// The brightness the exposure loop aims the photograph at, and the
+        /// range it will settle for. Both ends matter: below the floor a
+        /// suitcase is a dark smudge, and above the ceiling it is a white one
+        /// with the straps burned off — and once a pixel has clipped to white
+        /// there is nothing left to recover afterwards.
+        /// </summary>
+        private const float Target = 150f;
+        private const float Floor = 90f;
+        private const float Ceiling = 205f;
+
+        /// <summary>
+        /// The layer the copy is drawn on. Default, deliberately.
+        ///
+        /// A private unused layer looks like the careful choice and is not:
+        /// URP's renderer carries its own opaque and transparent layer masks,
+        /// and whatever they leave out is silently never drawn. Default is the
+        /// one layer certain to be rendered. Nothing can stray into the shot
+        /// anyway: the camera is orthographic, a few metres deep, and nine
+        /// kilometres beneath the map.
+        /// </summary>
+        private const int StandLayerIndex = 0;
+
+        /// <summary>
         /// Where the copy is stood up to be photographed: far below the world,
         /// clear of the water box at y = -1, which is 1000 units tall and so
         /// reaches down to -501.
@@ -60,23 +81,32 @@ namespace PeakMapInteractive.Minimap
         private static readonly HashSet<string> _ordered = new HashSet<string>();
         private static bool _working;
 
-        /// <summary>
-        /// The layer the copy is drawn on. Default, deliberately.
-        ///
-        /// A private unused layer looks like the careful choice and is not:
-        /// URP's renderer carries its own opaque and transparent layer masks,
-        /// and whatever they leave out is silently never drawn — which is one
-        /// of the two ways the first attempt could have produced black frames.
-        /// Default is the one layer certain to be rendered. Nothing can stray
-        /// into the shot anyway: the camera is orthographic, a few metres deep,
-        /// and nine kilometres beneath the map.
-        /// </summary>
-        private const int StandLayerIndex = 0;
+        /// <summary>Side of the frame being photographed, read from config per bake.</summary>
+        private static int _resolution = 128;
 
         private struct Order
         {
             public string Key;
             public GameObject Source;
+        }
+
+        /// <summary>Camera, lights and their original strengths, as one thing.</summary>
+        private sealed class Rig
+        {
+            public GameObject Root;
+            public Camera Camera;
+            public Light[] Lights;
+            public float[] Strength;
+        }
+
+        /// <summary>What one photograph came back with.</summary>
+        private struct Shot
+        {
+            public Color32[] Pixels;
+            public int Drawn;
+            public float Average;
+            public Color32[] OnBlack;
+            public Color32[] OnWhite;
         }
 
         /// <summary>
@@ -118,7 +148,7 @@ namespace PeakMapInteractive.Minimap
         ///
         /// Scene copies arrive as "Luggage_Suitcase_A (Clone) 3" and similar,
         /// so the clone suffix and any trailing copy number come off. Letters
-        /// are left alone: "Luggage_A" and "Luggage_B" really are different
+        /// are left alone: "LuggageBig" and "LuggageEpic" really are different
         /// models and deserve different pictures.
         /// </summary>
         internal static string KeyFor(GameObject go)
@@ -164,6 +194,8 @@ namespace PeakMapInteractive.Minimap
                 yield break;
             }
 
+            _resolution = Mathf.Clamp(Plugin.Settings.MinimapIconResolution.Value, 64, 1024);
+
             var temporary = new List<Mesh>();
             GameObject stand = BuildStand(order.Source, temporary, out Bounds bounds);
 
@@ -173,7 +205,7 @@ namespace PeakMapInteractive.Minimap
                 yield break;
             }
 
-            var target = new RenderTexture(Resolution, Resolution, 24, RenderTextureFormat.ARGB32)
+            var target = new RenderTexture(_resolution, _resolution, 24, RenderTextureFormat.ARGB32)
             {
                 name = "PeakMapInteractive_IconBake",
                 useMipMap = false,
@@ -181,46 +213,61 @@ namespace PeakMapInteractive.Minimap
             };
             target.Create();
 
-            GameObject rig = BuildRig(bounds, target, out Camera camera);
+            Rig rig = BuildRig(bounds, target);
 
             Plugin.Logger.LogInfo(
-                $"Minimap: baking '{order.Key}' — bounds centre {bounds.center}, size {bounds.size}, " +
-                $"camera at {camera.transform.position}, half-frame {camera.orthographicSize:0.###}, " +
-                $"layer {StandLayerIndex}, lighting {Lighting()}");
+                $"Minimap: baking '{order.Key}' at {_resolution}px — bounds centre {bounds.center}, " +
+                $"size {bounds.size}, half-frame {rig.Camera.orthographicSize:0.###}, " +
+                $"lighting {Lighting()}");
 
-            // Camera.Render() does nothing at all under URP — silently, which
-            // cost the exporter half a day. The only thing that works is
-            // leaving an enabled camera for the pipeline to draw on its own,
-            // so the result is not there until a frame has actually gone by.
-            //
-            // Photographed twice, against black and then against white. The
-            // first attempt cleared to transparent and read the alpha back,
-            // and every icon came out a solid opaque square: URP hands back a
-            // fully opaque texture whatever the camera was told to clear to.
-            // Two backgrounds settle it without needing any alpha at all — a
-            // pixel that did not change is the object, a pixel that went from
-            // black to white is the background, and everything between is an
-            // edge.
-            //
-            // Waiting a whole frame rather than WaitForEndOfFrame, because a
-            // coroutine already running in the end-of-frame phase resumes
-            // inside that same phase: back-to-back bakes read the texture
-            // twice without a render in between, got two identical frames and
-            // so decided every pixel was opaque. Resuming in Update instead
-            // means the texture always holds the frame that has just finished.
-            camera.backgroundColor = Color.black;
-            yield return null;
-            yield return null;
-            Color32[] onBlack = ReadBack(target);
+            // Photographed until it comes out at a readable brightness, rather
+            // than at one exposure picked in advance. The models arrive with
+            // wildly different albedo — a scuffed brown suitcase and a white
+            // stone statue under identical light are a dark smudge and a blown
+            // white one — and the icon is baked once and kept, so there is no
+            // second chance later.
+            var shot = default(Shot);
+            float exposure = 1f;
 
-            camera.backgroundColor = Color.white;
-            yield return null;
-            yield return null;
-            Color32[] onWhite = ReadBack(target);
+            for (int attempt = 1; attempt <= 3; attempt++)
+            {
+                Expose(rig, exposure);
 
-            Sprite icon = Compose(order.Key, onBlack, onWhite);
+                // A whole frame each time, not WaitForEndOfFrame: a coroutine
+                // already running in the end-of-frame phase resumes inside that
+                // same phase, so back-to-back bakes read the texture twice with
+                // no render in between and saw two identical frames. Resuming
+                // in Update means the texture always holds the frame that has
+                // just finished.
+                rig.Camera.backgroundColor = Color.black;
+                yield return null;
+                yield return null;
+                Color32[] onBlack = ReadBack(target);
 
-            UnityEngine.Object.Destroy(rig);
+                rig.Camera.backgroundColor = Color.white;
+                yield return null;
+                yield return null;
+                Color32[] onWhite = ReadBack(target);
+
+                shot = Compose(onBlack, onWhite);
+
+                if (shot.Drawn == 0 || shot.Drawn == shot.Pixels.Length) break;
+                if (shot.Average >= Floor && shot.Average <= Ceiling) break;
+
+                // Output is gamma-encoded, so brightness moves roughly as the
+                // 1/2.2 power of the light: correcting in one step needs the
+                // ratio raised back by that much.
+                exposure *= Mathf.Pow(Target / Mathf.Max(shot.Average, 1f), 2.2f);
+                exposure = Mathf.Clamp(exposure, 0.002f, 50f);
+
+                Plugin.Logger.LogInfo(
+                    $"Minimap: '{order.Key}' came out at {shot.Average:0.#} on attempt {attempt}; " +
+                    $"re-lighting at {exposure:0.###}x.");
+            }
+
+            Sprite icon = Finish(order.Key, shot);
+
+            UnityEngine.Object.Destroy(rig.Root);
             UnityEngine.Object.Destroy(stand);
 
             foreach (Mesh mesh in temporary)
@@ -231,11 +278,7 @@ namespace PeakMapInteractive.Minimap
 
             _icons[order.Key] = icon;
 
-            if (icon == null)
-            {
-                Plugin.Logger.LogWarning($"Minimap: nothing could be baked for '{order.Key}'.");
-                yield break;
-            }
+            if (icon == null) yield break;
 
             Plugin.Logger.LogInfo(
                 $"Minimap: baked icon for '{order.Key}' " +
@@ -245,32 +288,49 @@ namespace PeakMapInteractive.Minimap
         }
 
         /// <summary>
-        /// Writes a baked icon out as a PNG, so it can be looked at properly.
-        /// Off by default: this exists for judging the icons while they are
-        /// being dialled in, not for the finished mod.
+        /// Turns the last photograph into a sprite, or explains why it could
+        /// not. Split out from the exposure loop so that everything the loop
+        /// needs to decide is separate from everything done once at the end.
         /// </summary>
-        private static void Dump(string key, Sprite icon) => Write(key, icon.texture.EncodeToPNG());
-
-        private static void Write(string key, byte[] png)
+        private static Sprite Finish(string key, Shot shot)
         {
-            try
+            if (shot.Pixels == null)
             {
-                string folder = System.IO.Path.Combine(Plugin.OutputDir, "icons");
-                System.IO.Directory.CreateDirectory(folder);
-
-                var safe = new System.Text.StringBuilder(key.Length);
-                foreach (char c in key)
-                    safe.Append(char.IsLetterOrDigit(c) || c == '_' || c == '-' ? c : '_');
-
-                string path = System.IO.Path.Combine(folder, safe + ".png");
-                System.IO.File.WriteAllBytes(path, png);
-
-                Plugin.Logger.LogInfo($"Minimap: wrote {path}");
+                Plugin.Logger.LogWarning($"Minimap: '{key}' was never photographed.");
+                return null;
             }
-            catch (System.Exception error)
+
+            if (Plugin.Settings.MinimapDumpIcons.Value)
             {
-                Plugin.Logger.LogWarning($"Minimap: could not write '{key}': {error.Message}");
+                DumpFrame(key + "_on_black", shot.OnBlack);
+                DumpFrame(key + "_on_white", shot.OnWhite);
             }
+
+            if (shot.Drawn == 0)
+            {
+                Plugin.Logger.LogWarning($"Minimap: '{key}' came back empty — nothing was drawn at all.");
+                return null;
+            }
+
+            // Every single pixel opaque means the two frames never differed,
+            // and two frames only fail to differ when the camera did not draw
+            // them. A real icon cannot fill the frame — the framing leaves
+            // eight per cent of air around the subject on purpose.
+            if (shot.Drawn == shot.Pixels.Length)
+            {
+                Plugin.Logger.LogWarning(
+                    $"Minimap: '{key}' filled the whole frame, so the two photographs were " +
+                    "identical and the camera never rendered.");
+                return null;
+            }
+
+            Plugin.Logger.LogInfo(
+                $"Minimap: '{key}' covers {shot.Drawn} of {shot.Pixels.Length} pixels, " +
+                $"averaging {shot.Average:0.#}.");
+
+            Brighten(key, shot.Pixels, shot.Average);
+
+            return Trim(shot.Pixels);
         }
 
         /// <summary>
@@ -336,12 +396,10 @@ namespace PeakMapInteractive.Minimap
 
                 // Worked out from the mesh rather than read off the renderer.
                 // Renderer.bounds on something created this same frame is not
-                // reliably filled in yet, and a bounds that came back empty
-                // would put the camera at the world origin looking at nothing
-                // — which is one of the two things that could have produced the
-                // black frames.
-                Bounds piecePart = MeshBounds(piece.transform, mesh);
-                bounds = any ? Grow(bounds, piecePart) : piecePart;
+                // reliably filled in yet, and empty bounds would put the camera
+                // at the world origin looking at nothing.
+                Bounds part = MeshBounds(piece.transform, mesh);
+                bounds = any ? Grow(bounds, part) : part;
                 any = true;
             }
 
@@ -453,7 +511,7 @@ namespace PeakMapInteractive.Minimap
         /// capybara. A little yaw and downward tilt on top of that stop it
         /// reading as a flat elevation drawing.
         /// </summary>
-        private static GameObject BuildRig(Bounds bounds, RenderTexture target, out Camera camera)
+        private static Rig BuildRig(Bounds bounds, RenderTexture target)
         {
             Vector3 size = bounds.size;
             float yaw = (size.x <= size.z ? 90f : 0f) + 20f;
@@ -463,10 +521,10 @@ namespace PeakMapInteractive.Minimap
             float radius = Mathf.Max(bounds.extents.magnitude, 0.1f);
             float back = radius * 4f + 2f;
 
-            var rig = new GameObject("PeakMapInteractive_IconRig");
-            rig.transform.SetPositionAndRotation(bounds.center - rotation * Vector3.forward * back, rotation);
+            var root = new GameObject("PeakMapInteractive_IconRig");
+            root.transform.SetPositionAndRotation(bounds.center - rotation * Vector3.forward * back, rotation);
 
-            camera = rig.AddComponent<Camera>();
+            var camera = root.AddComponent<Camera>();
             camera.orthographic = true;
             camera.orthographicSize = half;
             camera.clearFlags = CameraClearFlags.SolidColor;
@@ -480,9 +538,10 @@ namespace PeakMapInteractive.Minimap
             camera.depth = -100f;
             camera.targetTexture = target;
 
-            // Post-processing would tone-map the transparent background into
-            // something that is no longer transparent, and grade the icon along
-            // with it. An icon wants the material's own colours, unmediated.
+            // Post-processing would tone-map the background into something that
+            // is no longer the colour it was cleared to, which the whole
+            // black-and-white keying depends on, and grade the icon along with
+            // it. An icon wants the material's own colours, unmediated.
             try
             {
                 UniversalAdditionalCameraData data = camera.GetUniversalAdditionalCameraData();
@@ -507,10 +566,23 @@ namespace PeakMapInteractive.Minimap
             // the rest of the run because the icon is baked once. A point light
             // reaches only as far as its range, so nine kilometres up the
             // mountain nothing notices these exist.
-            AddLight(rig.transform, bounds.center, rotation * new Vector3(-0.7f, 1f, -1.2f) * radius * 2f, 2.2f);
-            AddLight(rig.transform, bounds.center, rotation * new Vector3(1f, 0.1f, -0.9f) * radius * 2.5f, 0.8f);
+            var lights = new[]
+            {
+                AddLight(root.transform, bounds.center, rotation * new Vector3(-0.7f, 1f, -1.2f) * radius * 2f, 1f),
+                AddLight(root.transform, bounds.center, rotation * new Vector3(1f, 0.1f, -0.9f) * radius * 2.5f, 0.35f)
+            };
 
-            return rig;
+            var strength = new float[lights.Length];
+            for (int i = 0; i < lights.Length; i++) strength[i] = lights[i].intensity;
+
+            return new Rig { Root = root, Camera = camera, Lights = lights, Strength = strength };
+        }
+
+        /// <summary>Turns the rig's lights up or down together.</summary>
+        private static void Expose(Rig rig, float exposure)
+        {
+            for (int i = 0; i < rig.Lights.Length; i++)
+                rig.Lights[i].intensity = rig.Strength[i] * exposure;
         }
 
         /// <summary>
@@ -539,7 +611,7 @@ namespace PeakMapInteractive.Minimap
         /// the distance. A fixed intensity lights a suitcase properly and
         /// leaves a belltower almost black.
         /// </summary>
-        private static void AddLight(Transform parent, Vector3 subject, Vector3 offset, float brightness)
+        private static Light AddLight(Transform parent, Vector3 subject, Vector3 offset, float brightness)
         {
             float distanceSquared = Mathf.Max(offset.sqrMagnitude, 0.01f);
 
@@ -557,6 +629,8 @@ namespace PeakMapInteractive.Minimap
             light.range = Mathf.Sqrt(distanceSquared) * 4f;
             light.shadows = LightShadows.None;
             light.renderMode = LightRenderMode.ForcePixel;
+
+            return light;
         }
 
         // --- readback --------------------------------------------------------
@@ -566,8 +640,8 @@ namespace PeakMapInteractive.Minimap
             RenderTexture previous = RenderTexture.active;
             RenderTexture.active = target;
 
-            var full = new Texture2D(Resolution, Resolution, TextureFormat.RGBA32, false);
-            full.ReadPixels(new Rect(0f, 0f, Resolution, Resolution), 0, 0);
+            var full = new Texture2D(_resolution, _resolution, TextureFormat.RGBA32, false);
+            full.ReadPixels(new Rect(0f, 0f, _resolution, _resolution), 0, 0);
             full.Apply();
 
             RenderTexture.active = previous;
@@ -585,13 +659,14 @@ namespace PeakMapInteractive.Minimap
         /// object is there. Wherever black became white, that pixel is empty.
         /// The gap between the two is exactly how much of the pixel the
         /// background showed through, which is the alpha channel the pipeline
-        /// would not give up.
+        /// would not give up: asked to clear to transparent, URP hands back a
+        /// fully opaque texture regardless.
         /// </summary>
-        private static Sprite Compose(string key, Color32[] onBlack, Color32[] onWhite)
+        private static Shot Compose(Color32[] onBlack, Color32[] onWhite)
         {
             var pixels = new Color32[onBlack.Length];
             int drawn = 0;
-            long red = 0, green = 0, blue = 0;
+            long total = 0;
 
             for (int i = 0; i < pixels.Length; i++)
             {
@@ -623,98 +698,34 @@ namespace PeakMapInteractive.Minimap
                 if (alpha <= 128) continue;
 
                 drawn++;
-                red += pixels[i].r;
-                green += pixels[i].g;
-                blue += pixels[i].b;
+                total += (pixels[i].r + pixels[i].g + pixels[i].b) / 3;
             }
 
-            if (Plugin.Settings.MinimapDumpIcons.Value)
+            return new Shot
             {
-                DumpFrame(key + "_on_black", onBlack);
-                DumpFrame(key + "_on_white", onWhite);
-            }
-
-            if (drawn == 0)
-            {
-                Plugin.Logger.LogWarning($"Minimap: '{key}' came back empty — nothing was drawn at all.");
-                return null;
-            }
-
-            // Every single pixel opaque means the two frames never differed,
-            // and two frames only fail to differ when the camera did not draw
-            // them: the render texture still holds whatever it was created
-            // with. A real icon cannot fill the frame — the framing leaves
-            // eight per cent of air around the subject on purpose.
-            if (drawn == pixels.Length)
-            {
-                Plugin.Logger.LogWarning(
-                    $"Minimap: '{key}' filled the whole frame, so the two photographs were " +
-                    "identical and the camera never rendered. Average colour " +
-                    $"({red / drawn}, {green / drawn}, {blue / drawn}).");
-                return null;
-            }
-
-            Plugin.Logger.LogInfo(
-                $"Minimap: '{key}' covers {drawn} of {pixels.Length} pixels, " +
-                $"average colour ({red / drawn}, {green / drawn}, {blue / drawn}).");
-
-            Brighten(key, pixels, (red + green + blue) / (3f * drawn));
-
-            if (!TryFindContent(pixels, out int left, out int bottom, out int width, out int height))
-                return null;
-
-            var trimmed = new Texture2D(width, height, TextureFormat.RGBA32, mipChain: true)
-            {
-                name = "PeakMapInteractive_Icon",
-                filterMode = FilterMode.Bilinear,
-                wrapMode = TextureWrapMode.Clamp
+                Pixels = pixels,
+                Drawn = drawn,
+                Average = drawn == 0 ? 0f : (float)total / drawn,
+                OnBlack = onBlack,
+                OnWhite = onWhite
             };
-
-            var region = new Color32[width * height];
-
-            for (int y = 0; y < height; y++)
-                for (int x = 0; x < width; x++)
-                    region[y * width + x] = pixels[(bottom + y) * Resolution + left + x];
-
-            trimmed.SetPixels32(region);
-
-            // Mipmaps matter here more than usual: a 128-pixel photograph is
-            // drawn at about twenty on the map, and without them that much
-            // minification turns detail into sparkle.
-            trimmed.Apply(updateMipmaps: true, makeNoLongerReadable: false);
-
-            // FullRect rather than a tight mesh: a tight mesh is generated from
-            // the alpha, and the marker draws a dark rim just outside it.
-            return Sprite.Create(
-                trimmed, new Rect(0f, 0f, width, height), new Vector2(0.5f, 0.5f),
-                100f, 0, SpriteMeshType.FullRect);
         }
 
         /// <summary>
-        /// Lifts the icon to a readable brightness.
+        /// Lifts an icon that is still dark after the exposure loop has done
+        /// what it can — some models are simply dark, and a dark suitcase on a
+        /// dark plate is a smudge.
         ///
-        /// The models come back nearly black. The rig's point lights are on and
-        /// the pipeline says it renders additional lights, so the likeliest
-        /// explanation is that PEAK's own shaders answer to the sun and little
-        /// else — and nine kilometres under the map, at whatever hour the run
-        /// happens to be at, the sun is not doing the icon any favours.
-        ///
-        /// Correcting it here rather than by chasing the lighting is what makes
-        /// the result the same at midnight as at noon, which matters because
-        /// the icon is baked once and then kept.
-        ///
-        /// Done as a gamma curve rather than a multiplier so that the bright
-        /// parts of a model stay put instead of clipping to white: a suitcase
-        /// lit to an average of thirty keeps its clasps and its straps.
+        /// A gamma curve rather than a multiplier, so the bright parts stay put
+        /// instead of clipping: a suitcase lit to an average of sixty keeps its
+        /// clasps and its straps.
         /// </summary>
         private static void Brighten(string key, Color32[] pixels, float average)
         {
-            const float target = 158f;
-
             if (average < 1f) average = 1f;
 
             float gamma = Mathf.Clamp(
-                Mathf.Log(target / 255f) / Mathf.Log(average / 255f), 0.25f, 1f);
+                Mathf.Log(Target / 255f) / Mathf.Log(average / 255f), 0.35f, 1f);
 
             if (gamma > 0.995f) return;
 
@@ -731,43 +742,60 @@ namespace PeakMapInteractive.Minimap
             }
 
             Plugin.Logger.LogInfo(
-                $"Minimap: '{key}' averaged {average:0.#}, lifted towards {target:0} with gamma {gamma:0.###}.");
+                $"Minimap: '{key}' lifted from {average:0.#} towards {Target:0} with gamma {gamma:0.###}.");
         }
 
         /// <summary>
-        /// Writes one of the two raw frames out, exactly as the camera saw it.
-        /// When an icon comes out wrong this is the picture that says which
-        /// half went wrong — nothing drawn, or drawn and unlit.
-        /// </summary>
-        private static void DumpFrame(string name, Color32[] pixels)
-        {
-            var frame = new Texture2D(Resolution, Resolution, TextureFormat.RGBA32, false);
-            frame.SetPixels32(pixels);
-            frame.Apply();
-
-            Write(name, frame.EncodeToPNG());
-            UnityEngine.Object.Destroy(frame);
-        }
-
-        /// <summary>
-        /// The box the object actually occupies, with a little air around it.
+        /// Cuts the icon down to what was actually drawn.
         ///
         /// Trimming is what gives every icon the same visual weight. Without
         /// it, a tall thin object is a sliver in the middle of the marker while
         /// a squat one fills the whole thing.
         /// </summary>
+        private static Sprite Trim(Color32[] pixels)
+        {
+            if (!TryFindContent(pixels, out int left, out int bottom, out int width, out int height))
+                return null;
+
+            var trimmed = new Texture2D(width, height, TextureFormat.RGBA32, mipChain: true)
+            {
+                name = "PeakMapInteractive_Icon",
+                filterMode = FilterMode.Bilinear,
+                wrapMode = TextureWrapMode.Clamp
+            };
+
+            var region = new Color32[width * height];
+
+            for (int y = 0; y < height; y++)
+                for (int x = 0; x < width; x++)
+                    region[y * width + x] = pixels[(bottom + y) * _resolution + left + x];
+
+            trimmed.SetPixels32(region);
+
+            // Mipmaps matter here more than usual: the photograph is several
+            // hundred pixels across and drawn at about twenty on the map, and
+            // without them that much minification turns detail into sparkle.
+            trimmed.Apply(updateMipmaps: true, makeNoLongerReadable: false);
+
+            // FullRect rather than a tight mesh: a tight mesh is generated from
+            // the alpha, and the marker draws a dark rim just outside it.
+            return Sprite.Create(
+                trimmed, new Rect(0f, 0f, width, height), new Vector2(0.5f, 0.5f),
+                100f, 0, SpriteMeshType.FullRect);
+        }
+
         private static bool TryFindContent(Color32[] pixels, out int left, out int bottom, out int width, out int height)
         {
             const byte threshold = 16;
-            const int margin = 2;
+            int margin = Mathf.Max(_resolution / 64, 1);
 
-            int minX = Resolution, minY = Resolution, maxX = -1, maxY = -1;
+            int minX = _resolution, minY = _resolution, maxX = -1, maxY = -1;
 
-            for (int y = 0; y < Resolution; y++)
+            for (int y = 0; y < _resolution; y++)
             {
-                for (int x = 0; x < Resolution; x++)
+                for (int x = 0; x < _resolution; x++)
                 {
-                    if (pixels[y * Resolution + x].a < threshold) continue;
+                    if (pixels[y * _resolution + x].a < threshold) continue;
 
                     if (x < minX) minX = x;
                     if (x > maxX) maxX = x;
@@ -784,10 +812,56 @@ namespace PeakMapInteractive.Minimap
 
             left = Mathf.Max(minX - margin, 0);
             bottom = Mathf.Max(minY - margin, 0);
-            width = Mathf.Min(maxX + margin, Resolution - 1) - left + 1;
-            height = Mathf.Min(maxY + margin, Resolution - 1) - bottom + 1;
+            width = Mathf.Min(maxX + margin, _resolution - 1) - left + 1;
+            height = Mathf.Min(maxY + margin, _resolution - 1) - bottom + 1;
 
             return width > 1 && height > 1;
+        }
+
+        // --- looking at the results ------------------------------------------
+
+        /// <summary>
+        /// Writes a baked icon out as a PNG, so it can be looked at properly.
+        /// Off by default: this exists for judging the icons while they are
+        /// being dialled in, not for the finished mod.
+        /// </summary>
+        private static void Dump(string key, Sprite icon) => Write(key, icon.texture.EncodeToPNG());
+
+        /// <summary>
+        /// Writes one of the two raw frames out, exactly as the camera saw it.
+        /// When an icon comes out wrong this is the picture that says which
+        /// half went wrong — nothing drawn, or drawn and unlit.
+        /// </summary>
+        private static void DumpFrame(string name, Color32[] pixels)
+        {
+            if (pixels == null) return;
+
+            var frame = new Texture2D(_resolution, _resolution, TextureFormat.RGBA32, false);
+            frame.SetPixels32(pixels);
+            frame.Apply();
+
+            Write(name, frame.EncodeToPNG());
+            UnityEngine.Object.Destroy(frame);
+        }
+
+        private static void Write(string key, byte[] png)
+        {
+            try
+            {
+                string folder = System.IO.Path.Combine(Plugin.OutputDir, "icons");
+                System.IO.Directory.CreateDirectory(folder);
+
+                var safe = new System.Text.StringBuilder(key.Length);
+                foreach (char c in key)
+                    safe.Append(char.IsLetterOrDigit(c) || c == '_' || c == '-' ? c : '_');
+
+                string path = System.IO.Path.Combine(folder, safe + ".png");
+                System.IO.File.WriteAllBytes(path, png);
+            }
+            catch (System.Exception error)
+            {
+                Plugin.Logger.LogWarning($"Minimap: could not write '{key}': {error.Message}");
+            }
         }
     }
 }

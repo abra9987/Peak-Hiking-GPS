@@ -1,4 +1,4 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using System.Linq;
 using TMPro;
 using UnityEngine;
@@ -52,11 +52,9 @@ namespace PeakMapInteractive.Minimap
         private bool _wanted = true;
         private bool _shown;
 
-        /// <summary>
-        /// When the run actually became playable, so icons are not photographed
-        /// out of a world that is still assembling itself.
-        /// </summary>
-        private float _playingSince = -1f;
+        /// <summary>When the mountain finished loading, and whether the run has begun.</summary>
+        private float _levelSince = -1f;
+        private bool _stoodUp;
         private float _span;
         private int _pitchIndex;
 
@@ -446,11 +444,7 @@ namespace PeakMapInteractive.Minimap
         {
             if (Input.GetKeyDown(Plugin.Settings.MinimapToggleKey.Value)) _wanted = !_wanted;
 
-            bool playing = IsInPlay();
-            if (!playing) _playingSince = -1f;
-            else if (_playingSince < 0f) _playingSince = Time.time;
-
-            bool ready = _wanted && playing;
+            bool ready = _wanted && IsInPlay();
             if (ready != _shown) Show(ready);
             if (!ready) return;
 
@@ -468,26 +462,59 @@ namespace PeakMapInteractive.Minimap
         }
 
         /// <summary>
-        /// True only once the player is standing in a real biome.
+        /// True only once the run has actually started — the character is up on
+        /// their feet, not still lying on the beach with their eyes shut.
         ///
-        /// The airport has no map to show, and opening on it looked broken.
-        /// The wake-up matters just as much: the run starts with the character
-        /// lying on the beach and the eyelid effect washing the screen out, and
-        /// the minimap was blinking along with it.
+        /// Two conditions, and the later one wins. The first is the game's own
+        /// idea of the run having begun, taken from what
+        /// <c>Character.TestSpawnChallengeItems</c> waits for before it puts an
+        /// item in your hand: not passed out on the beach, not being warped,
+        /// standing on something. The second is a plain delay from the moment
+        /// the mountain finished loading, because "grounded" goes true the
+        /// instant the body touches sand, well before the character has got up
+        /// and rubbed their eyes.
+        ///
+        /// Getting this wrong is not cosmetic. Icons are photographed out of
+        /// the loaded scene and kept for the rest of the run, so one taken from
+        /// a world that is still assembling itself is wrong until the run ends.
         /// </summary>
-        private static bool IsInPlay()
+        private bool IsInPlay()
         {
-            if (LoadingScreenHandler.loading) return false;
+            if (LoadingScreenHandler.loading) return Restart();
 
             Character player = Character.localCharacter;
-            if (player == null || player.data == null) return false;
-            if (player.data.passedOut || player.data.fullyPassedOut) return false;
-            if (player.data.passedOutOnTheBeach > 0f) return false;
+            if (player == null || player.data == null) return Restart();
 
             // The airport scene has no MapHandler, which is the cleanest way to
             // ask "am I on the mountain yet".
             MapHandler map = Singleton<MapHandler>.Instance;
-            return map != null && map.segments != null && map.segments.Length > 0;
+            if (map == null || map.segments == null || map.segments.Length == 0) return Restart();
+
+            if (_levelSince < 0f) _levelSince = Time.time;
+
+            // Passing out later in the run hides the map, but does not send the
+            // wake-up conditions back to the start: they have already been met.
+            if (player.data.passedOut || player.data.fullyPassedOut) return false;
+
+            if (!_stoodUp)
+            {
+                if (player.data.passedOutOnTheBeach > 0f) return false;
+                if (player.warping) return false;
+                if (!player.data.isGrounded) return false;
+                if (Time.time - _levelSince < Plugin.Settings.MinimapStartDelay.Value) return false;
+
+                _stoodUp = true;
+            }
+
+            return true;
+        }
+
+        /// <summary>Forgets the run, for when there is no longer one to be in.</summary>
+        private bool Restart()
+        {
+            _levelSince = -1f;
+            _stoodUp = false;
+            return false;
         }
 
         private void Show(bool shown)
@@ -674,14 +701,6 @@ namespace PeakMapInteractive.Minimap
             Character self = Character.localCharacter;
             float baseSize = Plugin.Settings.MinimapMarkerSize.Value;
             bool wantIcons = Plugin.Settings.MinimapIcons.Value;
-
-            // Nothing is photographed until the run has been under way for a
-            // while. The character starts the run lying on the beach with their
-            // eyes shut, and the world around them is still being put together;
-            // an icon baked out of that is baked out of a half-built scene, and
-            // it is kept for the rest of the run.
-            bool settled = _playingSince >= 0f
-                           && Time.time - _playingSince >= Plugin.Settings.MinimapIconDelay.Value;
             Vector2 panel = _panel.sizeDelta;
             int used = 0;
 
@@ -705,7 +724,7 @@ namespace PeakMapInteractive.Minimap
                 marker.Root.sizeDelta = new Vector2(size, size);
                 marker.Plate.color = ShadeByHeight(_sightings[i].Colour, height);
 
-                Sprite icon = wantIcons ? IconFor(_sightings[i], settled) : null;
+                Sprite icon = wantIcons ? IconFor(_sightings[i]) : null;
                 marker.Icon.gameObject.SetActive(icon != null);
 
                 if (icon == null) continue;
@@ -726,12 +745,12 @@ namespace PeakMapInteractive.Minimap
         /// only what is actually on screen is worth photographing, and the scan
         /// reaches further than the window does.
         /// </summary>
-        private static Sprite IconFor(MarkerSighting sighting, bool mayBake)
+        private static Sprite IconFor(MarkerSighting sighting)
         {
             if (string.IsNullOrEmpty(sighting.IconKey)) return null;
 
             Sprite baked = IconBaker.Get(sighting.IconKey);
-            if (baked == null && mayBake) IconBaker.Request(sighting.IconKey, sighting.Source);
+            if (baked == null) IconBaker.Request(sighting.IconKey, sighting.Source);
 
             return baked;
         }
