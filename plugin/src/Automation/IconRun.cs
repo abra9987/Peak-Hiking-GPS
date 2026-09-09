@@ -59,10 +59,59 @@ namespace PeakMapInteractive.Automation
 
             Plugin.Logger.LogInfo("Icon run: finished.");
 
+            yield return Photograph();
+
             if (!Plugin.Settings.QuitWhenDone.Value) yield break;
 
             yield return new WaitForSecondsRealtime(1f);
             Application.Quit();
+        }
+
+        /// <summary>
+        /// Takes a picture of the map itself, with the markers on it.
+        ///
+        /// Every icon so far has been judged as a PNG on its own, several
+        /// hundred pixels across and alone on a transparent field. That is not
+        /// what anybody sees. What they see is the same picture at about
+        /// twenty-six pixels, on a coloured plate, over terrain, next to other
+        /// markers — and none of that had ever been looked at, because looking
+        /// at it meant somebody playing.
+        /// </summary>
+        private static IEnumerator Photograph()
+        {
+            Minimap.MinimapController map =
+                Plugin.Instance.gameObject.GetComponent<Minimap.MinimapController>()
+                ?? Plugin.Instance.gameObject.AddComponent<Minimap.MinimapController>();
+
+            if (map == null) yield break;
+
+            // The character is half-spawned and under the terrain, so every
+            // honest readiness test says the run is not playable. It is not —
+            // but the map draws from here perfectly well.
+            Minimap.MinimapController.ForceVisible = true;
+
+            // Long enough for the marker scan to run and for any icon it asks
+            // for to be photographed.
+            yield return new WaitForSecondsRealtime(2f);
+
+            string path = System.IO.Path.Combine(Plugin.OutputDir, "icons", "map.png");
+
+            try
+            {
+                System.IO.Directory.CreateDirectory(System.IO.Path.GetDirectoryName(path));
+                ScreenCapture.CaptureScreenshot(path);
+            }
+            catch (System.Exception error)
+            {
+                Plugin.Logger.LogWarning($"Icon run: could not photograph the map: {error.Message}");
+                yield break;
+            }
+
+            // The capture is written on a later frame, and quitting before it
+            // lands leaves a zero-byte file.
+            yield return new WaitForSecondsRealtime(2f);
+
+            Plugin.Logger.LogInfo($"Icon run: wrote {path}");
         }
 
         /// <summary>

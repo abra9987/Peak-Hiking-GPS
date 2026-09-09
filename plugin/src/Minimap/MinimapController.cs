@@ -84,6 +84,17 @@ namespace PeakMapInteractive.Minimap
         private bool _wanted = true;
         private bool _shown;
 
+        /// <summary>
+        /// Shows the map regardless of whether the run is playable.
+        ///
+        /// Only ever set by the unattended icon run, which drives the game
+        /// itself and leaves the character half-spawned under the terrain — so
+        /// every honest test of "is this person actually playing" says no. The
+        /// map draws fine from there, and a photograph of it is the only way to
+        /// see the markers without somebody climbing to them.
+        /// </summary>
+        internal static bool ForceVisible;
+
         /// <summary>When the mountain finished loading, and whether the run has begun.</summary>
         private float _levelSince = -1f;
         private bool _stoodUp;
@@ -294,17 +305,22 @@ namespace PeakMapInteractive.Minimap
             var textObject = new GameObject("Readout");
             textObject.transform.SetParent(parent, worldPositionStays: false);
 
+            // Inside the frame's bottom strip, which is what the strip is for.
+            // It used to hang below the frame instead — pinned to the bottom
+            // edge and then grown downwards from it — so the numbers were
+            // printed over the sky. Nobody caught it because until the map
+            // could photograph itself, nobody had looked at it.
             var rect = textObject.AddComponent<RectTransform>();
             rect.anchorMin = new Vector2(0f, 0f);
             rect.anchorMax = new Vector2(1f, 0f);
-            rect.pivot = new Vector2(0.5f, 1f);
-            rect.anchoredPosition = new Vector2(0f, -4f);
-            rect.sizeDelta = new Vector2(0f, 52f);
+            rect.pivot = new Vector2(0.5f, 0f);
+            rect.anchoredPosition = new Vector2(0f, 5f);
+            rect.sizeDelta = new Vector2(0f, 40f);
 
             var text = textObject.AddComponent<TextMeshProUGUI>();
             text.font = GameFont();
             text.fontSize = 17f;
-            text.alignment = TextAlignmentOptions.Top;
+            text.alignment = TextAlignmentOptions.Center;
             text.color = new Color(0.94f, 0.94f, 0.92f);
             text.raycastTarget = false;
             text.enableWordWrapping = false;
@@ -476,7 +492,7 @@ namespace PeakMapInteractive.Minimap
         {
             if (Input.GetKeyDown(Plugin.Settings.MinimapToggleKey.Value)) _wanted = !_wanted;
 
-            bool ready = _wanted && IsInPlay();
+            bool ready = _wanted && (ForceVisible || IsInPlay());
             if (ready != _shown) Show(ready);
             if (!ready) return;
 
@@ -990,10 +1006,15 @@ namespace PeakMapInteractive.Minimap
 
         private static int Sweep(Transform branch)
         {
-            int asked = 0;
+            // Stop at the first thing that matches. A belltower contains a
+            // bell, and both answer to the classifier, so carrying on down
+            // photographed one object twice under two of its own names — the
+            // second one identical to the first, down to the pixel count, and
+            // holding a second place in a cache of sixty-four.
+            if (TryClassify(branch.gameObject, out Color _, out bool _))
+                return Ask(branch.gameObject) ? 1 : 0;
 
-            if (TryClassify(branch.gameObject, out Color _, out bool _) && Ask(branch.gameObject))
-                asked++;
+            int asked = 0;
 
             for (int i = 0; i < branch.childCount; i++)
                 asked += Sweep(branch.GetChild(i));
