@@ -51,6 +51,12 @@ namespace PeakMapInteractive.Minimap
 
         private bool _wanted = true;
         private bool _shown;
+
+        /// <summary>
+        /// When the run actually became playable, so icons are not photographed
+        /// out of a world that is still assembling itself.
+        /// </summary>
+        private float _playingSince = -1f;
         private float _span;
         private int _pitchIndex;
 
@@ -440,7 +446,11 @@ namespace PeakMapInteractive.Minimap
         {
             if (Input.GetKeyDown(Plugin.Settings.MinimapToggleKey.Value)) _wanted = !_wanted;
 
-            bool ready = _wanted && IsInPlay();
+            bool playing = IsInPlay();
+            if (!playing) _playingSince = -1f;
+            else if (_playingSince < 0f) _playingSince = Time.time;
+
+            bool ready = _wanted && playing;
             if (ready != _shown) Show(ready);
             if (!ready) return;
 
@@ -586,15 +596,16 @@ namespace PeakMapInteractive.Minimap
             Character player = Character.localCharacter;
             if (_compass == null || player == null) return;
 
-            if (!TryNearestLoot(player.Center, out Vector3 target, out float _))
-            {
-                _compass.gameObject.SetActive(false);
-                return;
-            }
+            // Always on screen. It used to disappear whenever there was no
+            // chest in range, which is exactly when a player looks at it to
+            // work out which way they are facing — and a control that vanishes
+            // reads as broken rather than as empty.
+            //
+            // With nothing to point at it points north, which is what a compass
+            // does when it is not being asked anything.
+            bool hasTarget = TryNearestLoot(player.Center, out Vector3 target, out float _);
 
-            _compass.gameObject.SetActive(true);
-
-            Vector3 delta = target - player.Center;
+            Vector3 delta = hasTarget ? target - player.Center : Vector3.forward;
             float bearing = Mathf.Atan2(delta.x, delta.z) * Mathf.Rad2Deg;
             float facing = MainCamera.instance != null
                 ? MainCamera.instance.transform.eulerAngles.y
@@ -663,6 +674,14 @@ namespace PeakMapInteractive.Minimap
             Character self = Character.localCharacter;
             float baseSize = Plugin.Settings.MinimapMarkerSize.Value;
             bool wantIcons = Plugin.Settings.MinimapIcons.Value;
+
+            // Nothing is photographed until the run has been under way for a
+            // while. The character starts the run lying on the beach with their
+            // eyes shut, and the world around them is still being put together;
+            // an icon baked out of that is baked out of a half-built scene, and
+            // it is kept for the rest of the run.
+            bool settled = _playingSince >= 0f
+                           && Time.time - _playingSince >= Plugin.Settings.MinimapIconDelay.Value;
             Vector2 panel = _panel.sizeDelta;
             int used = 0;
 
@@ -686,7 +705,7 @@ namespace PeakMapInteractive.Minimap
                 marker.Root.sizeDelta = new Vector2(size, size);
                 marker.Plate.color = ShadeByHeight(_sightings[i].Colour, height);
 
-                Sprite icon = wantIcons ? IconFor(_sightings[i]) : null;
+                Sprite icon = wantIcons ? IconFor(_sightings[i], settled) : null;
                 marker.Icon.gameObject.SetActive(icon != null);
 
                 if (icon == null) continue;
@@ -707,12 +726,12 @@ namespace PeakMapInteractive.Minimap
         /// only what is actually on screen is worth photographing, and the scan
         /// reaches further than the window does.
         /// </summary>
-        private static Sprite IconFor(MarkerSighting sighting)
+        private static Sprite IconFor(MarkerSighting sighting, bool mayBake)
         {
             if (string.IsNullOrEmpty(sighting.IconKey)) return null;
 
             Sprite baked = IconBaker.Get(sighting.IconKey);
-            if (baked == null) IconBaker.Request(sighting.IconKey, sighting.Source);
+            if (baked == null && mayBake) IconBaker.Request(sighting.IconKey, sighting.Source);
 
             return baked;
         }

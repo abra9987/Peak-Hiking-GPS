@@ -40,6 +40,13 @@ namespace PeakMapInteractive.Minimap
         private const int MaxIcons = 64;
 
         /// <summary>
+        /// How far from a marker a renderer may sit and still count as part of
+        /// the thing. Generous enough for a belltower, short enough to leave a
+        /// beach behind.
+        /// </summary>
+        private const float Reach = 12f;
+
+        /// <summary>
         /// Where the copy is stood up to be photographed: far below the world,
         /// clear of the water box at y = -1, which is 1000 units tall and so
         /// reaches down to -501.
@@ -52,7 +59,19 @@ namespace PeakMapInteractive.Minimap
         private static readonly Queue<Order> _queue = new Queue<Order>();
         private static readonly HashSet<string> _ordered = new HashSet<string>();
         private static bool _working;
-        private static int _layer = -1;
+
+        /// <summary>
+        /// The layer the copy is drawn on. Default, deliberately.
+        ///
+        /// A private unused layer looks like the careful choice and is not:
+        /// URP's renderer carries its own opaque and transparent layer masks,
+        /// and whatever they leave out is silently never drawn — which is one
+        /// of the two ways the first attempt could have produced black frames.
+        /// Default is the one layer certain to be rendered. Nothing can stray
+        /// into the shot anyway: the camera is orthographic, a few metres deep,
+        /// and nine kilometres beneath the map.
+        /// </summary>
+        private const int StandLayerIndex = 0;
 
         private struct Order
         {
@@ -162,19 +181,44 @@ namespace PeakMapInteractive.Minimap
             };
             target.Create();
 
-            GameObject rig = BuildRig(bounds, target);
+            GameObject rig = BuildRig(bounds, target, out Camera camera);
+
+            Plugin.Logger.LogInfo(
+                $"Minimap: baking '{order.Key}' — bounds centre {bounds.center}, size {bounds.size}, " +
+                $"camera at {camera.transform.position}, half-frame {camera.orthographicSize:0.###}, " +
+                $"layer {StandLayerIndex}, lighting {Lighting()}");
 
             // Camera.Render() does nothing at all under URP — silently, which
             // cost the exporter half a day. The only thing that works is
             // leaving an enabled camera for the pipeline to draw on its own,
             // so the result is not there until a frame has actually gone by.
-            Sprite icon = null;
+            //
+            // Photographed twice, against black and then against white. The
+            // first attempt cleared to transparent and read the alpha back,
+            // and every icon came out a solid opaque square: URP hands back a
+            // fully opaque texture whatever the camera was told to clear to.
+            // Two backgrounds settle it without needing any alpha at all — a
+            // pixel that did not change is the object, a pixel that went from
+            // black to white is the background, and everything between is an
+            // edge.
+            //
+            // Waiting a whole frame rather than WaitForEndOfFrame, because a
+            // coroutine already running in the end-of-frame phase resumes
+            // inside that same phase: back-to-back bakes read the texture
+            // twice without a render in between, got two identical frames and
+            // so decided every pixel was opaque. Resuming in Update instead
+            // means the texture always holds the frame that has just finished.
+            camera.backgroundColor = Color.black;
+            yield return null;
+            yield return null;
+            Color32[] onBlack = ReadBack(target);
 
-            for (int attempt = 0; attempt < 2 && icon == null; attempt++)
-            {
-                yield return new WaitForEndOfFrame();
-                icon = Capture(target);
-            }
+            camera.backgroundColor = Color.white;
+            yield return null;
+            yield return null;
+            Color32[] onWhite = ReadBack(target);
+
+            Sprite icon = Compose(order.Key, onBlack, onWhite);
 
             UnityEngine.Object.Destroy(rig);
             UnityEngine.Object.Destroy(stand);
@@ -205,7 +249,9 @@ namespace PeakMapInteractive.Minimap
         /// Off by default: this exists for judging the icons while they are
         /// being dialled in, not for the finished mod.
         /// </summary>
-        private static void Dump(string key, Sprite icon)
+        private static void Dump(string key, Sprite icon) => Write(key, icon.texture.EncodeToPNG());
+
+        private static void Write(string key, byte[] png)
         {
             try
             {
@@ -217,13 +263,13 @@ namespace PeakMapInteractive.Minimap
                     safe.Append(char.IsLetterOrDigit(c) || c == '_' || c == '-' ? c : '_');
 
                 string path = System.IO.Path.Combine(folder, safe + ".png");
-                System.IO.File.WriteAllBytes(path, icon.texture.EncodeToPNG());
+                System.IO.File.WriteAllBytes(path, png);
 
                 Plugin.Logger.LogInfo($"Minimap: wrote {path}");
             }
             catch (System.Exception error)
             {
-                Plugin.Logger.LogWarning($"Minimap: could not write the icon for '{key}': {error.Message}");
+                Plugin.Logger.LogWarning($"Minimap: could not write '{key}': {error.Message}");
             }
         }
 
@@ -245,19 +291,30 @@ namespace PeakMapInteractive.Minimap
             stand.transform.SetPositionAndRotation(Stand, Quaternion.identity);
 
             Transform origin = source.transform;
-            int layer = StandLayer();
             bool any = false;
+            int far = 0;
 
             foreach (Renderer renderer in source.GetComponentsInChildren<Renderer>())
             {
                 if (renderer == null || !renderer.enabled) continue;
                 if (!renderer.gameObject.activeInHierarchy) continue;
 
+                // Landmarks are recognised by name, and a name sits on whatever
+                // object the level designer put it on. "Beach_Campfire" turned
+                // out to be 360 renderers spread over 356 metres — a campfire
+                // and the entire beach around it. Anything that far from the
+                // marker is scenery, not the thing being photographed.
+                if (Vector3.Distance(renderer.transform.position, origin.position) > Reach)
+                {
+                    far++;
+                    continue;
+                }
+
                 Mesh mesh = MeshOf(renderer, temporary);
                 if (mesh == null) continue;
 
                 var piece = new GameObject(renderer.name);
-                piece.layer = layer;
+                piece.layer = StandLayerIndex;
                 piece.transform.SetParent(stand.transform, worldPositionStays: false);
 
                 Transform from = renderer.transform;
@@ -277,7 +334,14 @@ namespace PeakMapInteractive.Minimap
                 copy.receiveShadows = false;
                 copy.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
 
-                bounds = any ? Grow(bounds, copy.bounds) : copy.bounds;
+                // Worked out from the mesh rather than read off the renderer.
+                // Renderer.bounds on something created this same frame is not
+                // reliably filled in yet, and a bounds that came back empty
+                // would put the camera at the world origin looking at nothing
+                // — which is one of the two things that could have produced the
+                // black frames.
+                Bounds piecePart = MeshBounds(piece.transform, mesh);
+                bounds = any ? Grow(bounds, piecePart) : piecePart;
                 any = true;
             }
 
@@ -287,7 +351,38 @@ namespace PeakMapInteractive.Minimap
                 return null;
             }
 
+            Plugin.Logger.LogInfo(
+                $"Minimap: '{source.name}' copied as {stand.transform.childCount} renderer(s)" +
+                (far > 0 ? $", {far} left behind as scenery." : "."));
+
             return stand;
+        }
+
+        /// <summary>
+        /// A mesh's bounding box in world space, by transforming all eight
+        /// corners rather than the box itself: rotating a box and taking the
+        /// result's extents shrinks it.
+        /// </summary>
+        private static Bounds MeshBounds(Transform piece, Mesh mesh)
+        {
+            Bounds local = mesh.bounds;
+            Matrix4x4 matrix = piece.localToWorldMatrix;
+            Vector3 centre = local.center;
+            Vector3 extents = local.extents;
+
+            var bounds = new Bounds(matrix.MultiplyPoint3x4(centre - extents), Vector3.zero);
+
+            for (int corner = 1; corner < 8; corner++)
+            {
+                var offset = new Vector3(
+                    (corner & 1) == 0 ? -extents.x : extents.x,
+                    (corner & 2) == 0 ? -extents.y : extents.y,
+                    (corner & 4) == 0 ? -extents.z : extents.z);
+
+                bounds.Encapsulate(matrix.MultiplyPoint3x4(centre + offset));
+            }
+
+            return bounds;
         }
 
         /// <summary>
@@ -327,26 +422,26 @@ namespace PeakMapInteractive.Minimap
         }
 
         /// <summary>
-        /// A layer nothing else uses, so the bake camera can be told to draw
-        /// this and nothing else, and the player's camera never sees it.
-        /// PEAK leaves plenty free: it names 0, 4, 10, 20, 21, 22, 29 and 31.
+        /// What the renderer is set up to do with lights, for the log. If
+        /// additional lights are off in the pipeline asset, the rig's own point
+        /// lights do nothing and every icon comes out black.
         /// </summary>
-        private static int StandLayer()
+        private static string Lighting()
         {
-            if (_layer >= 0) return _layer;
-
-            for (int layer = 31; layer >= 8; layer--)
+            try
             {
-                if (!string.IsNullOrEmpty(LayerMask.LayerToName(layer))) continue;
+                var asset = UnityEngine.Rendering.GraphicsSettings.currentRenderPipeline
+                    as UniversalRenderPipelineAsset;
 
-                _layer = layer;
-                return _layer;
+                if (asset == null) return "not URP";
+
+                return $"additional lights {asset.additionalLightsRenderingMode}, " +
+                       $"ambient {RenderSettings.ambientMode}/{RenderSettings.ambientIntensity:0.##}";
             }
-
-            // Nothing free. Default still works, because the only thing nine
-            // kilometres under the map is what was just put there.
-            _layer = 0;
-            return _layer;
+            catch (System.Exception error)
+            {
+                return "unknown (" + error.Message + ")";
+            }
         }
 
         /// <summary>
@@ -358,7 +453,7 @@ namespace PeakMapInteractive.Minimap
         /// capybara. A little yaw and downward tilt on top of that stop it
         /// reading as a flat elevation drawing.
         /// </summary>
-        private static GameObject BuildRig(Bounds bounds, RenderTexture target)
+        private static GameObject BuildRig(Bounds bounds, RenderTexture target, out Camera camera)
         {
             Vector3 size = bounds.size;
             float yaw = (size.x <= size.z ? 90f : 0f) + 20f;
@@ -371,12 +466,12 @@ namespace PeakMapInteractive.Minimap
             var rig = new GameObject("PeakMapInteractive_IconRig");
             rig.transform.SetPositionAndRotation(bounds.center - rotation * Vector3.forward * back, rotation);
 
-            var camera = rig.AddComponent<Camera>();
+            camera = rig.AddComponent<Camera>();
             camera.orthographic = true;
             camera.orthographicSize = half;
             camera.clearFlags = CameraClearFlags.SolidColor;
-            camera.backgroundColor = new Color(0f, 0f, 0f, 0f);
-            camera.cullingMask = 1 << StandLayer();
+            camera.backgroundColor = Color.black;
+            camera.cullingMask = 1 << StandLayerIndex;
             camera.nearClipPlane = 0.01f;
             camera.farClipPlane = back + radius * 4f;
             camera.allowHDR = false;
@@ -466,14 +561,7 @@ namespace PeakMapInteractive.Minimap
 
         // --- readback --------------------------------------------------------
 
-        /// <summary>
-        /// Reads the render back and trims it to what was actually drawn.
-        ///
-        /// Returns null when the frame came back empty, which is the signal to
-        /// wait one more frame: the camera is built and read within the same
-        /// tick, and the pipeline draws it somewhere in between.
-        /// </summary>
-        private static Sprite Capture(RenderTexture target)
+        private static Color32[] ReadBack(RenderTexture target)
         {
             RenderTexture previous = RenderTexture.active;
             RenderTexture.active = target;
@@ -487,18 +575,93 @@ namespace PeakMapInteractive.Minimap
             Color32[] pixels = full.GetPixels32();
             UnityEngine.Object.Destroy(full);
 
-            if (!TryFindContent(pixels, out int left, out int bottom, out int width, out int height))
-            {
-                // Either nothing was drawn, or it was drawn by a shader that
-                // does not bother writing alpha for an opaque surface — and
-                // from the pixels alone those look identical. Keying against
-                // the background settles it, at the price of losing anything on
-                // the model that is genuinely black.
-                if (!TryKeyBackground(pixels)) return null;
-                if (!TryFindContent(pixels, out left, out bottom, out width, out height)) return null;
+            return pixels;
+        }
 
-                Plugin.Logger.LogInfo("Minimap: the icon shader wrote no alpha; keyed against the background instead.");
+        /// <summary>
+        /// Builds the icon from the two photographs.
+        ///
+        /// Wherever the two frames agree, light passed through nothing and the
+        /// object is there. Wherever black became white, that pixel is empty.
+        /// The gap between the two is exactly how much of the pixel the
+        /// background showed through, which is the alpha channel the pipeline
+        /// would not give up.
+        /// </summary>
+        private static Sprite Compose(string key, Color32[] onBlack, Color32[] onWhite)
+        {
+            var pixels = new Color32[onBlack.Length];
+            int drawn = 0;
+            long red = 0, green = 0, blue = 0;
+
+            for (int i = 0; i < pixels.Length; i++)
+            {
+                Color32 dark = onBlack[i];
+                Color32 light = onWhite[i];
+
+                int shown = Mathf.Max(
+                    Mathf.Max(light.r - dark.r, light.g - dark.g),
+                    light.b - dark.b);
+
+                byte alpha = (byte)Mathf.Clamp(255 - shown, 0, 255);
+
+                if (alpha == 0)
+                {
+                    pixels[i] = new Color32(0, 0, 0, 0);
+                    continue;
+                }
+
+                // The dark frame is the object's colour already multiplied by
+                // its own coverage, so an edge pixel has to be divided back out
+                // or the whole silhouette gets a dark fringe.
+                float recover = 255f / alpha;
+                pixels[i] = new Color32(
+                    (byte)Mathf.Min(dark.r * recover, 255f),
+                    (byte)Mathf.Min(dark.g * recover, 255f),
+                    (byte)Mathf.Min(dark.b * recover, 255f),
+                    alpha);
+
+                if (alpha <= 128) continue;
+
+                drawn++;
+                red += pixels[i].r;
+                green += pixels[i].g;
+                blue += pixels[i].b;
             }
+
+            if (Plugin.Settings.MinimapDumpIcons.Value)
+            {
+                DumpFrame(key + "_on_black", onBlack);
+                DumpFrame(key + "_on_white", onWhite);
+            }
+
+            if (drawn == 0)
+            {
+                Plugin.Logger.LogWarning($"Minimap: '{key}' came back empty — nothing was drawn at all.");
+                return null;
+            }
+
+            // Every single pixel opaque means the two frames never differed,
+            // and two frames only fail to differ when the camera did not draw
+            // them: the render texture still holds whatever it was created
+            // with. A real icon cannot fill the frame — the framing leaves
+            // eight per cent of air around the subject on purpose.
+            if (drawn == pixels.Length)
+            {
+                Plugin.Logger.LogWarning(
+                    $"Minimap: '{key}' filled the whole frame, so the two photographs were " +
+                    "identical and the camera never rendered. Average colour " +
+                    $"({red / drawn}, {green / drawn}, {blue / drawn}).");
+                return null;
+            }
+
+            Plugin.Logger.LogInfo(
+                $"Minimap: '{key}' covers {drawn} of {pixels.Length} pixels, " +
+                $"average colour ({red / drawn}, {green / drawn}, {blue / drawn}).");
+
+            Brighten(key, pixels, (red + green + blue) / (3f * drawn));
+
+            if (!TryFindContent(pixels, out int left, out int bottom, out int width, out int height))
+                return null;
 
             var trimmed = new Texture2D(width, height, TextureFormat.RGBA32, mipChain: true)
             {
@@ -528,27 +691,62 @@ namespace PeakMapInteractive.Minimap
         }
 
         /// <summary>
-        /// Rebuilds the alpha channel from what is not the background.
+        /// Lifts the icon to a readable brightness.
         ///
-        /// The camera clears to transparent black, so anything with colour in
-        /// it was drawn. Reports whether it found enough to be worth using: a
-        /// frame that is entirely background really was empty.
+        /// The models come back nearly black. The rig's point lights are on and
+        /// the pipeline says it renders additional lights, so the likeliest
+        /// explanation is that PEAK's own shaders answer to the sun and little
+        /// else — and nine kilometres under the map, at whatever hour the run
+        /// happens to be at, the sun is not doing the icon any favours.
+        ///
+        /// Correcting it here rather than by chasing the lighting is what makes
+        /// the result the same at midnight as at noon, which matters because
+        /// the icon is baked once and then kept.
+        ///
+        /// Done as a gamma curve rather than a multiplier so that the bright
+        /// parts of a model stay put instead of clipping to white: a suitcase
+        /// lit to an average of thirty keeps its clasps and its straps.
         /// </summary>
-        private static bool TryKeyBackground(Color32[] pixels)
+        private static void Brighten(string key, Color32[] pixels, float average)
         {
-            const byte threshold = 8;
-            int drawn = 0;
+            const float target = 158f;
+
+            if (average < 1f) average = 1f;
+
+            float gamma = Mathf.Clamp(
+                Mathf.Log(target / 255f) / Mathf.Log(average / 255f), 0.25f, 1f);
+
+            if (gamma > 0.995f) return;
+
+            var curve = new byte[256];
+            for (int value = 0; value < 256; value++)
+                curve[value] = (byte)Mathf.Clamp(Mathf.Pow(value / 255f, gamma) * 255f, 0f, 255f);
 
             for (int i = 0; i < pixels.Length; i++)
             {
-                Color32 pixel = pixels[i];
-                bool lit = pixel.r > threshold || pixel.g > threshold || pixel.b > threshold;
+                if (pixels[i].a == 0) continue;
 
-                pixels[i] = new Color32(pixel.r, pixel.g, pixel.b, lit ? (byte)255 : (byte)0);
-                if (lit) drawn++;
+                pixels[i] = new Color32(
+                    curve[pixels[i].r], curve[pixels[i].g], curve[pixels[i].b], pixels[i].a);
             }
 
-            return drawn > 16;
+            Plugin.Logger.LogInfo(
+                $"Minimap: '{key}' averaged {average:0.#}, lifted towards {target:0} with gamma {gamma:0.###}.");
+        }
+
+        /// <summary>
+        /// Writes one of the two raw frames out, exactly as the camera saw it.
+        /// When an icon comes out wrong this is the picture that says which
+        /// half went wrong — nothing drawn, or drawn and unlit.
+        /// </summary>
+        private static void DumpFrame(string name, Color32[] pixels)
+        {
+            var frame = new Texture2D(Resolution, Resolution, TextureFormat.RGBA32, false);
+            frame.SetPixels32(pixels);
+            frame.Apply();
+
+            Write(name, frame.EncodeToPNG());
+            UnityEngine.Object.Destroy(frame);
         }
 
         /// <summary>

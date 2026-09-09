@@ -35,6 +35,7 @@ namespace PeakMapInteractive
         public readonly ConfigEntry<bool> MinimapIcons;
         public readonly ConfigEntry<float> MinimapMarkerSize;
         public readonly ConfigEntry<bool> MinimapDumpIcons;
+        public readonly ConfigEntry<float> MinimapIconDelay;
 
         public PluginConfig(ConfigFile cfg)
         {
@@ -156,6 +157,15 @@ namespace PeakMapInteractive
                     "figure with how far above or below you the thing sits. Large enough that " +
                     "the picture inside is recognisable is the whole constraint.",
                     new AcceptableValueRange<float>(8f, 48f)));
+
+            MinimapIconDelay = cfg.Bind(
+                "Minimap", "IconDelaySeconds", 10f,
+                new ConfigDescription(
+                    "How long after a run becomes playable before any icon is photographed. " +
+                    "The run opens with the character lying on the beach with their eyes shut " +
+                    "while the world is still being assembled, and an icon is baked once and " +
+                    "kept — so one taken too early is wrong for the rest of the run.",
+                    new AcceptableValueRange<float>(0f, 120f)));
 
             MinimapDumpIcons = cfg.Bind(
                 "Debug", "DumpIcons", false,
