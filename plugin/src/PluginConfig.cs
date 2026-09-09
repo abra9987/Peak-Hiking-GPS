@@ -24,6 +24,13 @@ namespace PeakMapInteractive
         public readonly ConfigEntry<bool> MeshIncludeFoliage;
         public readonly ConfigEntry<UnityEngine.KeyCode> CaptureHotkey;
 
+        public readonly ConfigEntry<bool> MinimapEnabled;
+        public readonly ConfigEntry<float> MinimapSize;
+        public readonly ConfigEntry<float> MinimapSpan;
+        public readonly ConfigEntry<UnityEngine.KeyCode> MinimapToggleKey;
+        public readonly ConfigEntry<UnityEngine.KeyCode> MinimapZoomInKey;
+        public readonly ConfigEntry<UnityEngine.KeyCode> MinimapZoomOutKey;
+
         public PluginConfig(ConfigFile cfg)
         {
             CaptureHotkey = cfg.Bind(
@@ -96,6 +103,25 @@ namespace PeakMapInteractive
                 "Mesh", "IncludeFoliage", false,
                 "Include grass, vines and leaves. They are most of the triangle count and " +
                 "little of the map, but a faithful reproduction needs them.");
+
+            MinimapEnabled = cfg.Bind(
+                "Minimap", "Enabled", true,
+                "Show a live top-down view of the mountain in a corner of the screen, for " +
+                "seeing where you are and planning where to climb next.");
+
+            MinimapSize = cfg.Bind(
+                "Minimap", "SizePixels", 320f,
+                new ConfigDescription("On-screen size of the map window.",
+                    new AcceptableValueRange<float>(120f, 900f)));
+
+            MinimapSpan = cfg.Bind(
+                "Minimap", "SpanMeters", 220f,
+                new ConfigDescription("How many metres across the window covers.",
+                    new AcceptableValueRange<float>(20f, 2000f)));
+
+            MinimapToggleKey = cfg.Bind("Minimap", "ToggleKey", UnityEngine.KeyCode.M, "Shows or hides the map.");
+            MinimapZoomInKey = cfg.Bind("Minimap", "ZoomInKey", UnityEngine.KeyCode.Equals, "Zooms in.");
+            MinimapZoomOutKey = cfg.Bind("Minimap", "ZoomOutKey", UnityEngine.KeyCode.Minus, "Zooms out.");
 
             WriteDiagnostics = cfg.Bind(
                 "Debug", "WriteDiagnostics", false,

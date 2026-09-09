@@ -52,6 +52,15 @@ namespace PeakMapInteractive
                 Logger.LogInfo("Quiet capture: audio muted, running in background.");
             }
 
+            // Safe to run alongside a capture: the minimap owns its own camera
+            // and render texture, and a capture blanks every canvas while it
+            // shoots, so the overlay cannot appear in an exported photo.
+            if (Settings.MinimapEnabled.Value)
+            {
+                gameObject.AddComponent<Minimap.MinimapController>();
+                Logger.LogInfo($"Minimap enabled (toggle: {Settings.MinimapToggleKey.Value}).");
+            }
+
             Logger.LogInfo($"{Name} {Version} loaded.");
             Logger.LogInfo($"Output directory: {OutputDir}");
             Logger.LogInfo($"Automation: autoRun={Settings.AutoRun.Value}, quitWhenDone={Settings.QuitWhenDone.Value}");

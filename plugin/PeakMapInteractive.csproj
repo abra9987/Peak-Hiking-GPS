@@ -25,7 +25,7 @@
     of the build output; BepInEx resolves them at runtime from the game itself.
   -->
   <ItemGroup>
-    <Reference Include="Assembly-CSharp;Assembly-CSharp-firstpass;Newtonsoft.Json;Zorro.Core.Runtime;PhotonUnityNetworking;PhotonRealtime;Unity.Collections;Unity.Mathematics;Unity.Burst;UnityEngine;UnityEngine.CoreModule;UnityEngine.PhysicsModule;UnityEngine.TerrainModule;UnityEngine.ImageConversionModule;UnityEngine.ScreenCaptureModule;UnityEngine.InputLegacyModule;UnityEngine.AudioModule;UnityEngine.UIModule;UnityEngine.UIElementsModule;Unity.RenderPipelines.Universal.Runtime;Unity.RenderPipelines.Core.Runtime">
+    <Reference Include="Assembly-CSharp;Assembly-CSharp-firstpass;Newtonsoft.Json;Zorro.Core.Runtime;PhotonUnityNetworking;PhotonRealtime;Unity.Collections;Unity.Mathematics;Unity.Burst;UnityEngine;UnityEngine.CoreModule;UnityEngine.PhysicsModule;UnityEngine.TerrainModule;UnityEngine.ImageConversionModule;UnityEngine.ScreenCaptureModule;UnityEngine.InputLegacyModule;UnityEngine.AudioModule;UnityEngine.UIModule;UnityEngine.UI;UnityEngine.UIElementsModule;Unity.RenderPipelines.Universal.Runtime;Unity.RenderPipelines.Core.Runtime">
       <HintPath>$(PeakManaged)\%(Identity).dll</HintPath>
       <Private>false</Private>
     </Reference>
