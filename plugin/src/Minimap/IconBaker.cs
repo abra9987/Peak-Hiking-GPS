@@ -1,4 +1,4 @@
-using System.Collections;
+﻿using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.Rendering.Universal;
@@ -45,15 +45,14 @@ namespace PeakMapInteractive.Minimap
         private const float Reach = 12f;
 
         /// <summary>
-        /// The brightness the exposure loop aims the photograph at, and the
-        /// range it will settle for. Both ends matter: below the floor a
-        /// suitcase is a dark smudge, and above the ceiling it is a white one
-        /// with the straps burned off — and once a pixel has clipped to white
-        /// there is nothing left to recover afterwards.
+        /// What the exposure loop aims a photograph at, and how dark it will
+        /// let one be before re-shooting. There is no matching ceiling: being
+        /// pale is not a fault, and levelling afterwards can bring a pale thing
+        /// back. What levelling cannot undo is a pixel already clipped to
+        /// white, which is judged separately.
         /// </summary>
         private const float Target = 150f;
         private const float Floor = 90f;
-        private const float Ceiling = 205f;
 
         /// <summary>
         /// The layer the copy is drawn on. Default, deliberately.
@@ -105,6 +104,7 @@ namespace PeakMapInteractive.Minimap
             public Color32[] Pixels;
             public int Drawn;
             public float Average;
+            public int Clipped;
             public Color32[] OnBlack;
             public Color32[] OnWhite;
         }
@@ -252,7 +252,15 @@ namespace PeakMapInteractive.Minimap
                 shot = Compose(onBlack, onWhite);
 
                 if (shot.Drawn == 0 || shot.Drawn == shot.Pixels.Length) break;
-                if (shot.Average >= Floor && shot.Average <= Ceiling) break;
+
+                // Judged on burnt-out pixels and on darkness, not on the
+                // average. A cream suitcase and a white marble statue average
+                // high because they are pale, and re-shooting those only wastes
+                // frames — what cannot be undone later is a pixel that has
+                // clipped to white, and what levelling cannot rescue is an
+                // object with no light on it at all.
+                float burnt = (float)shot.Clipped / shot.Drawn;
+                if (burnt <= 0.12f && shot.Average >= Floor) break;
 
                 // Output is gamma-encoded, so brightness moves roughly as the
                 // 1/2.2 power of the light: correcting in one step needs the
@@ -261,8 +269,8 @@ namespace PeakMapInteractive.Minimap
                 exposure = Mathf.Clamp(exposure, 0.002f, 50f);
 
                 Plugin.Logger.LogInfo(
-                    $"Minimap: '{order.Key}' came out at {shot.Average:0.#} on attempt {attempt}; " +
-                    $"re-lighting at {exposure:0.###}x.");
+                    $"Minimap: '{order.Key}' came out at {shot.Average:0.#} with " +
+                    $"{burnt * 100f:0.#}% burnt out on attempt {attempt}; re-lighting at {exposure:0.###}x.");
             }
 
             Sprite icon = Finish(order.Key, shot);
@@ -326,9 +334,9 @@ namespace PeakMapInteractive.Minimap
 
             Plugin.Logger.LogInfo(
                 $"Minimap: '{key}' covers {shot.Drawn} of {shot.Pixels.Length} pixels, " +
-                $"averaging {shot.Average:0.#}.");
+                $"averaging {shot.Average:0.#}, {100f * shot.Clipped / shot.Drawn:0.#}% burnt out.");
 
-            Brighten(key, shot.Pixels, shot.Average);
+            Level(key, shot.Pixels, shot.Drawn);
 
             return Trim(shot.Pixels);
         }
@@ -666,6 +674,7 @@ namespace PeakMapInteractive.Minimap
         {
             var pixels = new Color32[onBlack.Length];
             int drawn = 0;
+            int clipped = 0;
             long total = 0;
 
             for (int i = 0; i < pixels.Length; i++)
@@ -699,6 +708,8 @@ namespace PeakMapInteractive.Minimap
 
                 drawn++;
                 total += (pixels[i].r + pixels[i].g + pixels[i].b) / 3;
+
+                if (pixels[i].r >= 250 && pixels[i].g >= 250 && pixels[i].b >= 250) clipped++;
             }
 
             return new Shot
@@ -706,32 +717,71 @@ namespace PeakMapInteractive.Minimap
                 Pixels = pixels,
                 Drawn = drawn,
                 Average = drawn == 0 ? 0f : (float)total / drawn,
+                Clipped = clipped,
                 OnBlack = onBlack,
                 OnWhite = onWhite
             };
         }
 
         /// <summary>
-        /// Lifts an icon that is still dark after the exposure loop has done
-        /// what it can — some models are simply dark, and a dark suitcase on a
-        /// dark plate is a smudge.
+        /// Spreads the icon across the full range of brightness available.
         ///
-        /// A gamma curve rather than a multiplier, so the bright parts stay put
-        /// instead of clipping: a suitcase lit to an average of sixty keeps its
-        /// clasps and its straps.
+        /// The models come back squeezed into whichever end of the range the
+        /// scene's own light put them in, and the rig cannot argue with that:
+        /// cutting its lamps to a twentieth moved a white statue from 248 to
+        /// 237, because what is lighting it is the scene's ambient and not
+        /// anything this code owns.
+        ///
+        /// What the rig can do is use the whole range afterwards. Reading the
+        /// darkest and lightest of the object — at the second and ninety-eighth
+        /// percentile, so a stray pixel cannot set the scale — and stretching
+        /// that span out is what brings a white statue's folds back and a brown
+        /// suitcase's straps up, with one rule for both.
         /// </summary>
-        private static void Brighten(string key, Color32[] pixels, float average)
+        private static void Level(string key, Color32[] pixels, int drawn)
         {
-            if (average < 1f) average = 1f;
+            const int floor = 20;
+            const int ceiling = 245;
 
-            float gamma = Mathf.Clamp(
-                Mathf.Log(Target / 255f) / Mathf.Log(average / 255f), 0.35f, 1f);
+            var histogram = new int[256];
 
-            if (gamma > 0.995f) return;
+            for (int i = 0; i < pixels.Length; i++)
+            {
+                if (pixels[i].a <= 128) continue;
+                histogram[(pixels[i].r + pixels[i].g + pixels[i].b) / 3]++;
+            }
+
+            int tail = Mathf.Max(1, Mathf.RoundToInt(drawn * 0.02f));
+
+            int low = 0, high = 255;
+            for (int value = 0, seen = 0; value < 256; value++)
+            {
+                seen += histogram[value];
+                if (seen < tail) continue;
+
+                low = value;
+                break;
+            }
+
+            for (int value = 255, seen = 0; value >= 0; value--)
+            {
+                seen += histogram[value];
+                if (seen < tail) continue;
+
+                high = value;
+                break;
+            }
+
+            // Already using the range, or so nearly flat that stretching it
+            // would only magnify whatever noise is in there.
+            if (high - low < 12) return;
+            if (low <= floor && high >= ceiling) return;
 
             var curve = new byte[256];
+            float scale = (ceiling - floor) / (float)(high - low);
+
             for (int value = 0; value < 256; value++)
-                curve[value] = (byte)Mathf.Clamp(Mathf.Pow(value / 255f, gamma) * 255f, 0f, 255f);
+                curve[value] = (byte)Mathf.Clamp(floor + (value - low) * scale, 0f, 255f);
 
             for (int i = 0; i < pixels.Length; i++)
             {
@@ -741,8 +791,7 @@ namespace PeakMapInteractive.Minimap
                     curve[pixels[i].r], curve[pixels[i].g], curve[pixels[i].b], pixels[i].a);
             }
 
-            Plugin.Logger.LogInfo(
-                $"Minimap: '{key}' lifted from {average:0.#} towards {Target:0} with gamma {gamma:0.###}.");
+            Plugin.Logger.LogInfo($"Minimap: '{key}' stretched from {low}-{high} to {floor}-{ceiling}.");
         }
 
         /// <summary>

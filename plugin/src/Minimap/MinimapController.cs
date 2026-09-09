@@ -33,6 +33,38 @@ namespace PeakMapInteractive.Minimap
         /// </summary>
         private static readonly float[] Pitches = { 90f, 75f, 45f };
 
+        /// <summary>
+        /// How far the marker scan reaches when the window is tighter than
+        /// this. The map can only draw what is in the window, but the compass
+        /// and the readout name the nearest chest, and those want to see past
+        /// the edge of the picture.
+        /// </summary>
+        private const float ScanRange = 250f;
+
+        /// <summary>
+        /// The zoom rungs, tightest first.
+        ///
+        /// Zooming used to multiply whatever the span happened to be, which
+        /// meant there was no such thing as a step: where you ended up depended
+        /// on where you started and how many times you had pressed the key.
+        /// A fixed ladder makes "three rungs up from the tightest" a real place,
+        /// which is what a starting zoom has to be to be worth configuring.
+        /// </summary>
+        private static readonly float[] Spans = BuildSpans();
+
+        private static float[] BuildSpans()
+        {
+            var spans = new List<float>();
+
+            // The same 0.7 the zoom keys always used, so the feel of one press
+            // is unchanged; only the places it can land are now fixed.
+            for (float span = 20f; span < 2000f; span /= 0.7f)
+                spans.Add(Mathf.Round(span));
+
+            spans.Add(2000f);
+            return spans.ToArray();
+        }
+
         private Camera _camera;
         private RenderTexture _target;
         private Canvas _canvas;
@@ -55,7 +87,7 @@ namespace PeakMapInteractive.Minimap
         /// <summary>When the mountain finished loading, and whether the run has begun.</summary>
         private float _levelSince = -1f;
         private bool _stoodUp;
-        private float _span;
+        private int _zoom;
         private int _pitchIndex;
 
         private struct MarkerSighting
@@ -94,7 +126,7 @@ namespace PeakMapInteractive.Minimap
 
         private void Awake()
         {
-            _span = Plugin.Settings.MinimapSpan.Value;
+            _zoom = StartZoom();
             BuildCamera();
             BuildOverlay();
             Show(false);
@@ -448,8 +480,11 @@ namespace PeakMapInteractive.Minimap
             if (ready != _shown) Show(ready);
             if (!ready) return;
 
-            if (Input.GetKeyDown(Plugin.Settings.MinimapZoomInKey.Value)) SetSpan(_span * 0.7f);
-            if (Input.GetKeyDown(Plugin.Settings.MinimapZoomOutKey.Value)) SetSpan(_span / 0.7f);
+            if (Input.GetKeyDown(Plugin.Settings.MinimapZoomInKey.Value))
+                _zoom = Mathf.Max(_zoom - 1, 0);
+
+            if (Input.GetKeyDown(Plugin.Settings.MinimapZoomOutKey.Value))
+                _zoom = Mathf.Min(_zoom + 1, Spans.Length - 1);
 
             if (Input.GetKeyDown(Plugin.Settings.MinimapAngleKey.Value))
                 _pitchIndex = (_pitchIndex + 1) % Pitches.Length;
@@ -519,15 +554,25 @@ namespace PeakMapInteractive.Minimap
 
         private void Show(bool shown)
         {
+            // Opening always starts from the configured rung. Coming back to a
+            // zoom left over from the last time it was open is disorienting:
+            // the map is glanced at mid-climb, and a glance has no time to work
+            // out what scale it is looking at.
+            if (shown && !_shown) _zoom = StartZoom();
+
             _shown = shown;
             if (_camera != null) _camera.enabled = shown;
             if (_canvas != null) _canvas.enabled = shown;
         }
 
-        private void SetSpan(float span)
-        {
-            _span = Mathf.Clamp(span, 20f, 2000f);
-        }
+        /// <summary>How many metres across the window currently covers.</summary>
+        private float Span => Spans[_zoom];
+
+        /// <summary>
+        /// Which rung the map opens on, counting the tightest as the first.
+        /// </summary>
+        private static int StartZoom()
+            => Mathf.Clamp(Plugin.Settings.MinimapStartZoom.Value - 1, 0, Spans.Length - 1);
 
         /// <summary>
         /// Places the camera above and behind the player at the chosen pitch,
@@ -549,7 +594,7 @@ namespace PeakMapInteractive.Minimap
             Vector3 back = rotation * Vector3.back * 1200f;
 
             _camera.transform.SetPositionAndRotation(focus + back, rotation);
-            _camera.orthographicSize = _span * 0.5f;
+            _camera.orthographicSize = Span * 0.5f;
             _camera.nearClipPlane = 1f;
             _camera.farClipPlane = 4000f;
         }
@@ -821,8 +866,13 @@ namespace PeakMapInteractive.Minimap
                 });
             }
 
+            // Deliberately wider than the window. What is drawn is decided by
+            // the viewport test below, but the compass and the readout both ask
+            // for the nearest chest, and at the tightest zoom a scan the size of
+            // the window would leave them pointing at nothing forty metres from
+            // a suitcase.
             Collider[] nearby = Physics.OverlapSphere(
-                player.Center, _span, ~0, QueryTriggerInteraction.Collide);
+                player.Center, Mathf.Max(Span, ScanRange), ~0, QueryTriggerInteraction.Collide);
 
             var seen = new HashSet<int>();
 

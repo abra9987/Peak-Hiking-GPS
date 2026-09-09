@@ -26,7 +26,7 @@ namespace PeakMapInteractive
 
         public readonly ConfigEntry<bool> MinimapEnabled;
         public readonly ConfigEntry<float> MinimapSize;
-        public readonly ConfigEntry<float> MinimapSpan;
+        public readonly ConfigEntry<int> MinimapStartZoom;
         public readonly ConfigEntry<UnityEngine.KeyCode> MinimapToggleKey;
         public readonly ConfigEntry<UnityEngine.KeyCode> MinimapZoomInKey;
         public readonly ConfigEntry<UnityEngine.KeyCode> MinimapZoomOutKey;
@@ -121,10 +121,13 @@ namespace PeakMapInteractive
                 new ConfigDescription("On-screen size of the map window.",
                     new AcceptableValueRange<float>(120f, 900f)));
 
-            MinimapSpan = cfg.Bind(
-                "Minimap", "SpanMeters", 220f,
-                new ConfigDescription("How many metres across the window covers.",
-                    new AcceptableValueRange<float>(20f, 2000f)));
+            MinimapStartZoom = cfg.Bind(
+                "Minimap", "StartZoomStep", 3,
+                new ConfigDescription(
+                    "Which zoom step the map opens on, counting the tightest as 1. The steps " +
+                    "run 20, 29, 41, 58, 83, 119, 170, 243, 347, 496, 708, 1012, 1446 and " +
+                    "2000 metres across, and the zoom keys move one step at a time.",
+                    new AcceptableValueRange<int>(1, 14)));
 
             MinimapToggleKey = cfg.Bind("Minimap", "ToggleKey", UnityEngine.KeyCode.M, "Shows or hides the map.");
             MinimapZoomInKey = cfg.Bind("Minimap", "ZoomInKey", UnityEngine.KeyCode.Equals, "Zooms in.");
