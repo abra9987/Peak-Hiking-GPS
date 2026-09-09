@@ -12,6 +12,10 @@ namespace PeakMapInteractive.Capture
         public int MeshCount;
         public int SkippedCount;
         public bool HasColors;
+
+        /// <summary>Geometry that exists in the game but could not be read.</summary>
+        public long LostTriangles;
+        public int LostMeshes;
     }
 
     /// <summary>
@@ -57,6 +61,7 @@ namespace PeakMapInteractive.Capture
             var result = new MeshExportResult();
             if (segmentRoot == null) return result;
 
+            MeshReader.ResetLostCounters();
             List<Renderer> renderers = SelectRenderers(segmentRoot, minSize, lodLevel, includeFoliage, result);
 
             var positions = new List<Vector3>();
@@ -115,6 +120,8 @@ namespace PeakMapInteractive.Capture
 
             result.VertexCount = positions.Count;
             result.TriangleCount = indices.Count / 3;
+            result.LostTriangles = MeshReader.LostTriangles;
+            result.LostMeshes = MeshReader.LostMeshes;
             return result;
         }
 

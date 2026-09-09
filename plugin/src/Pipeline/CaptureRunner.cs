@@ -251,7 +251,8 @@ namespace PeakMapInteractive.Pipeline
                         Plugin.Logger.LogInfo(
                             $"  mesh: {exported.TriangleCount / 1000}k tris from {exported.MeshCount} objects, " +
                             $"{exported.VertexCount / 1000}k verts, colours={exported.HasColors}, " +
-                            $"{exported.SkippedCount} skipped");
+                            $"{exported.SkippedCount} filtered out, " +
+                            $"LOST {exported.LostTriangles / 1000}k tris in {exported.LostMeshes} unreadable meshes");
                     }
                     else
                     {

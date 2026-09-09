@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.Rendering;
 
@@ -28,6 +29,16 @@ namespace PeakMapInteractive.Capture
     /// </summary>
     internal static class MeshReader
     {
+        /// <summary>Geometry lost to meshes that refuse to be read, for this segment.</summary>
+        public static long LostTriangles;
+        public static int LostMeshes;
+
+        public static void ResetLostCounters()
+        {
+            LostTriangles = 0;
+            LostMeshes = 0;
+        }
+
         public static MeshData Read(Mesh mesh)
         {
             if (mesh == null) return null;
@@ -68,7 +79,7 @@ namespace PeakMapInteractive.Capture
                 {
                     Positions = new Vector3[mesh.vertexCount],
                     Normals = new Vector3[mesh.vertexCount],
-                    Indices = DecodeIndices(indexBytes, mesh.indexFormat)
+                    Indices = DecodeIndices(mesh, indexBytes)
                 };
 
                 DecodeVertices(mesh, vertexBytes, data);
@@ -100,10 +111,16 @@ namespace PeakMapInteractive.Capture
             long indexCount = 0;
             for (int i = 0; i < mesh.subMeshCount; i++) indexCount += (long)mesh.GetIndexCount(i);
 
-            Plugin.Logger.LogWarning(
-                $"  cannot read '{mesh.name}': {error.Message} " +
-                $"(submeshes={mesh.subMeshCount}, indices={indexCount}, format={mesh.indexFormat}, " +
-                $"verts={mesh.vertexCount})");
+            LostTriangles += indexCount / 3;
+            LostMeshes++;
+
+            if (LostMeshes <= 5)
+            {
+                Plugin.Logger.LogWarning(
+                    $"  cannot read '{mesh.name}': {error.Message} " +
+                    $"(submeshes={mesh.subMeshCount}, indices={indexCount}, format={mesh.indexFormat}, " +
+                    $"verts={mesh.vertexCount})");
+            }
         }
 
         private static byte[] ReadBytes(GraphicsBuffer buffer)
@@ -120,22 +137,42 @@ namespace PeakMapInteractive.Capture
             return bytes;
         }
 
-        private static int[] DecodeIndices(byte[] bytes, IndexFormat format)
+        /// <summary>
+        /// Decodes the index buffer through the submesh table.
+        ///
+        /// Reading the buffer as one flat run is wrong whenever a submesh
+        /// carries a non-zero baseVertex: every triangle then points at the
+        /// wrong vertices and the object comes out as noise shaped vaguely
+        /// like the original. The table gives the offset each submesh's
+        /// indices are relative to.
+        /// </summary>
+        private static int[] DecodeIndices(Mesh mesh, byte[] bytes)
         {
-            if (format == IndexFormat.UInt16)
+            bool sixteenBit = mesh.indexFormat == IndexFormat.UInt16;
+            int stride = sixteenBit ? 2 : 4;
+            int available = bytes.Length / stride;
+
+            var indices = new List<int>(available);
+
+            for (int sub = 0; sub < mesh.subMeshCount; sub++)
             {
-                int count = bytes.Length / 2;
-                var indices = new int[count];
-                for (int i = 0; i < count; i++)
-                    indices[i] = BitConverter.ToUInt16(bytes, i * 2);
-                return indices;
+                SubMeshDescriptor descriptor = mesh.GetSubMesh(sub);
+                if (descriptor.topology != MeshTopology.Triangles) continue;
+
+                int end = descriptor.indexStart + descriptor.indexCount;
+                if (end > available) end = available;
+
+                for (int i = descriptor.indexStart; i < end; i++)
+                {
+                    int value = sixteenBit
+                        ? BitConverter.ToUInt16(bytes, i * 2)
+                        : (int)BitConverter.ToUInt32(bytes, i * 4);
+
+                    indices.Add(value + descriptor.baseVertex);
+                }
             }
 
-            int count32 = bytes.Length / 4;
-            var indices32 = new int[count32];
-            for (int i = 0; i < count32; i++)
-                indices32[i] = (int)BitConverter.ToUInt32(bytes, i * 4);
-            return indices32;
+            return indices.ToArray();
         }
 
         /// <summary>
