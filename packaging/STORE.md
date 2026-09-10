@@ -8,9 +8,11 @@ The upload form reads most of it out of the archive itself. Upload
 `dist/HikingGPS-1.0.0-thunderstore.zip`, which already carries `manifest.json`,
 `icon.png`, `CHANGELOG.md`, `LICENSE` and the page text in `README.md`.
 
+**Published:** <https://thunderstore.io/c/peak/p/abra9987/Hiking_GPS/>
+
 | Field | Value |
 |---|---|
-| Team | must be created first; **the name is permanent** and cannot be renamed or deleted once a package is published |
+| Team | `abra9987`. **The name is permanent** — it cannot be renamed or deleted once a package is published, which it now is |
 | Package name | `Hiking_GPS` (from the manifest) |
 | Version | `1.0.0` |
 | Description | from the manifest, 121 characters |
@@ -24,9 +26,31 @@ again, those URLs move with it and must be updated here.
 
 ## Nexus
 
-Nexus takes no manifest. Everything is typed into the form, and the description
-is BBCode rather than markdown — `packaging/nexus-description.bbcode` is that
-text, ready to paste.
+Nexus takes no manifest. Everything is typed into a five-step form, and what it
+accepts is narrower than it looks. Learned by doing it:
+
+- **The description editor is WYSIWYG, not a BBCode box.** Its last toolbar
+  button, `View source`, switches to BBCode — that is where
+  `packaging/nexus-description.bbcode` goes.
+- **Setting that textarea's value programmatically does not stick.** It is
+  React-backed and ignores a value it did not see typed; the text has to be
+  entered as real keystrokes.
+- **PEAK has exactly two categories on Nexus:** Miscellaneous and Mod. That is
+  the whole list.
+- **The header banner is 1300x372**, a different shape from the 1600x760 hero.
+  `docs/media/header.png` is that shape, so the crop dialog has nothing to cut.
+- **The gallery takes .jpg, .png and .gif only, 8 MB each.** No WebP. Videos are
+  added as an external link (YouTube and the like), never uploaded — so neither
+  `demo.webp` nor `demo.mp4` can go on the page. The GIF can: 540x304 at 96
+  colours, every second frame, is 6.5 MB and fits.
+- **The uploaded file's own version field defaults to `1`**, and the checkbox
+  under it pushes that back onto the mod, quietly undoing a `1.0.0` set earlier.
+- **The BepInEx requirement defaults to the x86 build.** PEAK is 64-bit; pick
+  `BepInEx v5.4.23.4 x64 (64-bit)`.
+- **The recommended permissions contradict this project's licence** — they say
+  modification is Ask-me and re-upload is not allowed, while the code is MIT
+  precisely so somebody else can keep the mod alive. Use "Write your own
+  (custom)" and say the split: MIT code, reserved artwork.
 
 | Field | Value |
 |---|---|
