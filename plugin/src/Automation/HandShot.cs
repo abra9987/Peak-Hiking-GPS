@@ -288,7 +288,7 @@ namespace PeakMapInteractive.Automation
         /// what is being judged is whether a device in the hands sits sensibly
         /// alongside it.
         /// </summary>
-        private static List<Behaviour> Suspend(Camera camera)
+        internal static List<Behaviour> Suspend(Camera camera)
         {
             var suspended = new List<Behaviour>();
 
@@ -313,7 +313,7 @@ namespace PeakMapInteractive.Automation
         }
 
         /// <summary>Where the camera was before it was borrowed.</summary>
-        private readonly struct CameraState
+        internal readonly struct CameraState
         {
             private readonly Vector3 _position;
             private readonly Quaternion _rotation;

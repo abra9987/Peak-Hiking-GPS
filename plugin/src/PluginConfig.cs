@@ -69,6 +69,8 @@ namespace PeakMapInteractive
         public readonly ConfigEntry<float> TrackerTilt;
         public readonly ConfigEntry<float> TrackerLuggageLift;
         public readonly ConfigEntry<float> TrackerLuggageTurn;
+        public readonly ConfigEntry<float> TrackerLuggageAcross;
+        public readonly ConfigEntry<float> TrackerLuggageAlong;
         public readonly ConfigEntry<float> TrackerOffsetUp;
         public readonly ConfigEntry<float> TrackerOffsetAway;
         public readonly ConfigEntry<float> TrackerGripAcross;
@@ -396,19 +398,33 @@ namespace PeakMapInteractive
                     new AcceptableValueRange<float>(0f, 1.5f)));
 
             TrackerLuggageLift = cfg.Bind(
-                "Tracker", "LuggageLift", 0.12f,
+                "Tracker", "LuggageLift", 0.06f,
                 new ConfigDescription(
-                    "How far above a suitcase's spawn point the device is laid, in metres, " +
-                    "so it rests on the floor of the case rather than through it. The " +
-                    "spawn point is a little above the floor and the device is thick.",
+                    "How far above the suitcase's spawn spots the device is laid, in metres, " +
+                    "so it rests on the floor of the case rather than through it.",
                     new AcceptableValueRange<float>(-0.2f, 0.4f)));
 
             TrackerLuggageTurn = cfg.Bind(
-                "Tracker", "LuggageTurn", 180f,
+                "Tracker", "LuggageTurn", 0f,
                 new ConfigDescription(
-                    "How the device is turned about the vertical when laid in a suitcase, " +
-                    "in degrees. 180 lays it across the case with the antenna towards the lid, away from whoever opened it.",
+                    "Which way the antenna points when the device is laid in a suitcase, in " +
+                    "degrees about the vertical. 0 and 180 lie across the case, 90 and -90 " +
+                    "along it.",
                     new AcceptableValueRange<float>(-180f, 180f)));
+
+            TrackerLuggageAcross = cfg.Bind(
+                "Tracker", "LuggageAcross", 0f,
+                new ConfigDescription(
+                    "How far across the suitcase, from the middle of its spawn spots, the " +
+                    "device is laid, in metres. Positive is towards the case's own +Z.",
+                    new AcceptableValueRange<float>(-0.5f, 0.5f)));
+
+            TrackerLuggageAlong = cfg.Bind(
+                "Tracker", "LuggageAlong", 0f,
+                new ConfigDescription(
+                    "How far along the suitcase, from the middle of its spawn spots, the " +
+                    "device is laid, in metres.",
+                    new AcceptableValueRange<float>(-0.5f, 0.5f)));
 
             TrackerTilt = cfg.Bind(
                 "Tracker", "TiltDegrees", 10f,

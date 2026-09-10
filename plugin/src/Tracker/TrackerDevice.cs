@@ -162,42 +162,44 @@ namespace PeakMapInteractive.Tracker
             if (item != null) item.centerOfMass = bias;
         }
 
-        private bool _centred;
+        private bool _placed;
 
         /// <summary>
-        /// Slides a device that has just been laid in a suitcase to the middle
-        /// of the case, along its length.
+        /// Lays a device that has just been put in a suitcase the way it is
+        /// meant to be found: on its back in the middle of the case, antenna
+        /// the way <c>Tracker/LuggageTurn</c> says.
         ///
-        /// A suitcase places its items on spawn spots — 45 centimetres from
-        /// the middle in the small one — and centres each item's bounds on
-        /// its spot, which is built for things a hand's length across. This
-        /// device is half a metre long at the size it is played at, so on a
-        /// spot it lay with its antenna through the end wall, whichever way
-        /// it was turned. It is moved to the middle of the case, along and
-        /// across; its height above the floor and its rotation are the
-        /// game's and stay as given.
-        ///
-        /// Done once, the first frame the item is found kinematic on the
-        /// ground, which is how a suitcase holds what it has laid out until
-        /// somebody takes it. Nothing else leaves an item in that state.
+        /// The suitcase places its items on spawn spots — 45 centimetres from
+        /// the middle in the small one, built for things a hand's length
+        /// across — with the item's own offsets composed onto the spot's
+        /// rotation, and keeps them kinematic until somebody takes one. This
+        /// device is half a metre long at the size it is played at, and
+        /// composing turns onto a spot that already turns produced a
+        /// different wrong pose per guess. So the pose is written whole, in
+        /// the suitcase's own frame, the first frame the device is found
+        /// kinematic on the ground — which is the state only a suitcase
+        /// leaves an item in. The middle is the middle of the spawn spots,
+        /// which sit on the case's centre line in every suitcase in the
+        /// game's files; `LuggageAlong` and `LuggageAcross` nudge from there
+        /// and `LuggageLift` sets the height above them.
         /// </summary>
-        private void CentreInLuggage()
+        private void PlaceInLuggage()
         {
-            if (_centred) return;
+            if (_placed) return;
             if (_item == null) _item = GetComponentInParent<Item>();
             if (_item == null || _item.rig == null) return;
             if (_item.itemState != ItemState.Ground || !_item.rig.isKinematic) return;
 
-            _centred = true;
+            _placed = true;
 
             // The suitcase this device was laid in is the one with a spawn
-            // spot under it. Not the nearest by its root: a suitcase's root
+            // spot near it. Not the nearest by its root: a suitcase's root
             // sits at one edge, so the nearest root can belong to the closed
-            // case next door, and the device was carried off into that one —
-            // which showed as a second item in a case that had held one.
+            // case next door — and the device was once carried off into that
+            // one, which showed as a second item in a case that had held one.
             Luggage nearest = null;
             Vector3 centre = Vector3.zero;
-            float best = 0.25f;
+            float best = 0.8f;
             foreach (Luggage luggage in Luggage.ALL_LUGGAGE)
             {
                 if (luggage == null) continue;
@@ -217,9 +219,7 @@ namespace PeakMapInteractive.Tracker
                         if (spot == null) continue;
                         sum += luggage.transform.InverseTransformPoint(spot.position);
                         count++;
-                        Vector3 flat = spot.position - _item.transform.position;
-                        flat.y = 0f;
-                        closest = Mathf.Min(closest, flat.magnitude);
+                        closest = Mathf.Min(closest, Vector3.Distance(spot.position, _item.transform.position));
                     }
 
                 if (count == 0 || closest >= best) continue;
@@ -229,19 +229,26 @@ namespace PeakMapInteractive.Tracker
             }
             if (nearest == null) return;
 
-            Vector3 local = nearest.transform.InverseTransformPoint(_item.transform.position);
-            local.x = centre.x;
-            local.z = centre.z;
+            var s = Plugin.Settings;
+            Vector3 local = centre + new Vector3(s.TrackerLuggageAlong.Value, s.TrackerLuggageLift.Value, s.TrackerLuggageAcross.Value);
             Vector3 world = nearest.transform.TransformPoint(local);
 
-            _item.transform.position = world;
+            // On its back: the back cover (the item's +Z) turned to face the
+            // floor, then the antenna turned about the vertical.
+            Quaternion pose = nearest.transform.rotation * Quaternion.Euler(90f, s.TrackerLuggageTurn.Value, 0f);
+
+            _item.transform.SetPositionAndRotation(world, pose);
             _item.rig.position = world;
+            _item.rig.rotation = pose;
+
+            Plugin.Logger.LogInfo(
+                $"Tracker: laid in '{nearest.name}' at local {local:F3}, turn {s.TrackerLuggageTurn.Value:0}.");
         }
 
         private void Update()
         {
             UpdateScreen();
-            CentreInLuggage();
+            PlaceInLuggage();
 
             for (int i = 0; i < _buttons.Length; i++)
             {

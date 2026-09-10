@@ -41,8 +41,13 @@ param(
     # How large the device is built for this run, and how large the line of
     # numbers under its map is. Both are ordinary settings; they are here so a
     # size can be tried without hand-editing the clone's config between runs.
-    [double] $Scale = 1.0,
-    [double] $ReadoutScale = 1.0
+    [double] $Scale = 4.0,
+    [double] $ReadoutScale = 1.0,
+    # How the device is laid in a suitcase, for the luggage photographs.
+    [double] $LuggageTurn = 0,
+    [double] $LuggageLift = 0.06,
+    [double] $LuggageAcross = 0.0,
+    [double] $LuggageAlong = 0.0
 )
 
 $ErrorActionPreference = 'Stop'
@@ -74,6 +79,10 @@ QuietCapture = true
 PreviewModel = true
 Scale = $Scale
 ReadoutScale = $ReadoutScale
+LuggageTurn = $LuggageTurn
+LuggageLift = $LuggageLift
+LuggageAcross = $LuggageAcross
+LuggageAlong = $LuggageAlong
 
 [Minimap]
 AutoBakeIcons = false

@@ -144,6 +144,10 @@ namespace PeakMapInteractive.Automation
             // still works in.
             yield return HandShot.Run(folder);
 
+            // And how it is found: laid in the nearest suitcase, seen from
+            // above and from the front.
+            yield return LuggageShot.Run(folder);
+
             yield return Leave();
         }
 

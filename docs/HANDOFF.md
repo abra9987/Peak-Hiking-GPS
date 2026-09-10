@@ -814,7 +814,7 @@ The settled numbers, all defaults now and all in `[Tracker]`:
 
 ```
 Scale 4      HoldX 0  HoldY -0.25  HoldZ 0.85    TiltDegrees 10
-LuggageTurn 180   LuggageLift 0.12   MarkerScale 2
+LuggageTurn 0     LuggageLift 0.06   MarkerScale 2
 GripAcross 0.05  GripBehind -0.033  GripHeight -0.012
 GripAngleX 270   GripAngleY 202     GripAngleZ 0      (the passport's)
 ```
@@ -877,25 +877,39 @@ fixed it, and the first two were tried alone and did nothing visible:
   never got their say. With sleep off it falls over at once.
 
 **In a suitcase it is placed, not dropped.** Luggage keeps what it lays
-out kinematic until somebody takes it, so the attitude it is given is the
-attitude it is found in, and no physics applies. The game's own hooks do
-it: `Item.offsetLuggageSpawn` with `offsetLuggageRotation` (180, 0, turn)
-and `offsetLuggagePosition` (0, lift, 0), both settings — `LuggageTurn`
-180 lays it across the case with the antenna towards the lid, away from
-whoever opened it, and `LuggageLift` 0.12 keeps it on the floor rather
-than through it. Then `TrackerDevice.CentreInLuggage` slides it to the
-middle of the spawn spots, because the spots are 45 cm from the middle in
-the small case and built for things a hand's length across; on one of
-them the device lay with its antenna through the wall.
+out kinematic until somebody takes it, so no physics applies and the pose
+it is given is the pose it is found in. `TrackerDevice.PlaceInLuggage`
+writes that pose whole, in the suitcase's own frame, the first frame the
+device is found kinematic on the ground: the middle of the spawn spots
+(they sit on the case's centre line in every suitcase in the game's
+files), `LuggageLift` above them, `Quaternion.Euler(90, LuggageTurn, 0)`
+so the back cover faces the floor and the antenna points where the turn
+says — 0 is across the case with the antenna towards the lid, away from
+whoever opened it, which is the settled default. `LuggageAlong` and
+`LuggageAcross` nudge from the middle and are zero.
 
-Two mistakes in that, worth not repeating. The dark panel on the back of
+The game's own hooks for this — `Item.offsetLuggageSpawn` with a position
+and a rotation — were tried first and abandoned: the rotation is composed
+onto a spawn spot that is itself turned, and the visual centring moves a
+half-metre device with an antenna 40 cm off the spot, so every guess at a
+number produced a different wrong pose. Writing the pose outright, in one
+frame, is shorter and has no such history.
+
+Three mistakes in that, worth not repeating. The dark panel on the back of
 the model is a battery cover: a dark rectangle in an orange frame seen
-from above is the *back*, not a switched-off screen, and the first three
-screenshots were read wrong for that reason. And "the nearest suitcase" by
-root distance is the wrong suitcase often enough to matter — a suitcase's
-root sits at one edge — so the device was carried into the closed case
-next door and showed up there as a second item beside a glider. It is
-chosen by the spawn spot under the device now.
+from above is the *back*, not a switched-off screen, and three screenshots
+were read wrong for that reason. "The nearest suitcase" by root distance
+is the wrong suitcase often enough to matter — a suitcase's root sits at
+one edge — so the device was carried into the closed case next door and
+showed up there as a second item beside a glider; it is chosen by the
+spawn spot nearest the device now. And the person testing it was walked
+to the beach and back a dozen times before the unattended run learned to
+do it: `LuggageShot` in `TrackerRun` now opens the nearest suitcase's lid,
+lays a device in it through the suitcase's own `OffsetSpawn` and
+`InitializePhysics`, and photographs it from above and from the front as
+`luggage-top.png` and `luggage-front.png`. `tools/preview-tracker.ps1`
+takes `-LuggageTurn`, `-LuggageLift`, `-LuggageAcross`, `-LuggageAlong`.
+That loop is two minutes and nobody's legs.
 
 **The zoom is kept between glances.** It used to snap back to
 `StartZoomStep` every time the map opened; in play that threw away a
