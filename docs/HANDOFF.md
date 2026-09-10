@@ -32,6 +32,10 @@ tools/    Clone setup, capture supervision, publishing       (PowerShell)
 - **`pwsh` is not installed here.** The packaging script's own examples say
   `pwsh tools/package.ps1`; on this machine it is `& '.\tools\package.ps1'` in
   Windows PowerShell 5.1, which runs it fine.
+- **GitHub:** remote `origin` is `https://github.com/abra9987/hiking-gps`.
+  `gh` is not installed, but Git Credential Manager holds a token for
+  `abra9987` with `gist, repo, workflow`, so `git push` works and the REST API
+  can be driven with `git credential fill` for anything `gh` would have done.
 - **BepInEx rewrites that file when the game exits**, from what it holds in memory.
   Editing it while the game is running loses the edit. Check the process first and
   read the file back after writing.
@@ -296,17 +300,21 @@ because it is the mod's face.
 
 ### Still needed from a person
 
-- **`website_url` in `packaging/manifest.json`** is still empty, and it is the
-  only thing left in the manifest. It cannot be filled from here: the working
-  copy has **no git remote at all**, the GitHub account `abra9987` holds one
-  unrelated repository (`Dictor`), and `gh` is not installed on this machine.
-  A URL invented ahead of the repository would ship a 404 to every player, which
-  is worse than an empty field, so it was left empty. Create the repository,
-  then paste the URL in and re-run the packaging script.
 - **A Thunderstore team.** Its name is permanent — it cannot be renamed or
-  deleted once a package is published.
+  deleted once a package is published. This is the last thing standing between
+  the archives in `dist/` and a published mod.
 
-Two of the four are now done, and how they were settled is worth keeping:
+The manifest is finished. How each field was settled is worth keeping:
+
+- **`website_url` is `https://github.com/abra9987/hiking-gps`**, and the
+  repository behind it is public and pushed. Publishing it forced two things
+  that had been quietly wrong. The root `LICENSE` was plain MIT while
+  `plugin/assets` sits in the repository, so publishing as it stood would have
+  licensed the artwork MIT and contradicted `packaging/LICENSE`; the same
+  ARTWORK carve-out is now in both. And the top-level `README` was entirely
+  about the web exporter and never mentioned the mod, so a player arriving from
+  a Thunderstore link would have landed on a page about something else. It
+  leads with the mod now, with the exporter as the half it grew out of.
 
 - **The BepInEx dependency string is `BepInEx-BepInExPack_PEAK-5.4.75301`**,
   taken off the package page, confirmed against

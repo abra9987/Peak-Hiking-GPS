@@ -28,3 +28,15 @@ It does NOT cover any asset, texture, model, geometry, name or trademark
 belonging to the game PEAK, which remain the property of Aggro Crab,
 Landfall Games and/or their licensors. Captured map data derived from the game
 is distributed as an unofficial fan resource and is not licensed under MIT.
+
+
+ARTWORK
+
+The MIT terms above cover the source code.
+
+The navigator artwork - the case, the glass and the button faces, held in
+plugin/assets - is not covered by them. It was drawn for this mod and remains
+(c) 2026 abra9987, all rights reserved. Fork the code, learn from it, build on
+it; please draw your own device rather than shipping this one.
+
+Ask if you want to use it anyway. The answer is likely yes.

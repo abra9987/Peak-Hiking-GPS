@@ -1,20 +1,48 @@
 <div align="center">
 
-# Peak Map Interactive
+# Hiking GPS
 
-**The daily PEAK map as actual terrain — not a screenshot of terrain.**
+**A live minimap for PEAK, on a handheld GPS you carry.**
 
-Real geometry, real altitudes, every marker in world space.
+Real terrain, drawn by the game itself. Markers for the things worth walking
+towards. And height, which is the axis a flat map throws away.
 
 </div>
 
 ---
 
-## What this is
+## The mod
 
-An unofficial, open-source map for the daily mountain in [PEAK](https://store.steampowered.com/app/3527290/PEAK/).
-A BepInEx plugin measures the generated map from inside the game and exports it;
-a web client renders it as a navigable 3D surface.
+An unofficial, open-source BepInEx mod for [PEAK](https://store.steampowered.com/app/3527290/PEAK/).
+Press `M` and the mountain is there: a camera looking down at the world you are
+standing in, with markers for unopened chests, campfires, statues, belltowers,
+capybaras, the scoutmaster and everyone else on the climb. A marker grows and
+lightens above you and shrinks and darkens below, because thirty metres sideways
+and thirty metres up are nothing alike on this mountain.
+
+**Client side.** Only you install it. Nobody else in the lobby needs it, the host
+does not need it, and it changes nothing anyone else sees. Harmony patches are
+installed only if you switch the development automation on, so an ordinary
+install does not patch the game at all.
+
+**No game assets ship with it.** The GPS itself is drawn for this mod. Marker
+icons are photographed from your own copy of the game at runtime, the first time
+you see each kind of thing — so the pictures always match the version you have,
+and none of PEAK's artwork travels.
+
+Controls, settings and installation are in
+[`packaging/README.md`](packaging/README.md), the readme the mod itself ships
+with. `pwsh tools/package.ps1` builds the Thunderstore and Nexus archives into
+`dist/`.
+
+## The other half: the exporter and the web viewer
+
+This began as a web map, and that half still works and still lives here: a
+plugin that measures the daily mountain and exports it, and a browser client
+that renders the export as navigable 3D terrain. The mod is the active one —
+when the question is "where do I go next", a live view rendered by the game
+beats anything exported — but none of the measuring below was wasted, and the
+export is the only route to a map you can study without the game running.
 
 Existing PEAK maps flatten the mountain to a photograph and paint dots on top.
 That is a reasonable thing to build, and it throws away the one axis the game is
@@ -44,10 +72,11 @@ drift apart. Everything else follows from not throwing that away.
 ## Layout
 
 ```
-plugin/    BepInEx plugin: measures the map, writes a snapshot   (C#)
-web/       3D viewer                                             (Three.js + Vite)
-tools/     Capture supervision, publishing, format fixture       (PowerShell + Node)
-docs/      Data format, architecture, automation
+plugin/    BepInEx plugin: the live GPS, and the snapshot exporter  (C#)
+web/       3D viewer for exported snapshots                        (Three.js + Vite)
+tools/     Clone setup, capture supervision, packaging, publishing (PowerShell + Node)
+packaging/ What ships to Thunderstore and Nexus: manifest, readme, licence
+docs/      Data format, architecture, automation, handoff notes
 ```
 
 ## Try it without the game
@@ -148,3 +177,8 @@ or Landfall Games. All game assets, trademarks and content remain theirs.
 Source code is MIT (see [LICENSE](LICENSE)). The licence covers this code only —
 not captured map data, and not anything belonging to the game. No game assets are
 redistributed here; marker icons are generated at runtime.
+
+The GPS artwork in `plugin/assets` is the one exception on our side: it was drawn
+for this mod and is reserved, so that the mod keeps its own face. Fork the code
+freely and draw your own device. If you want to use this one anyway, ask — the
+answer is likely yes.
