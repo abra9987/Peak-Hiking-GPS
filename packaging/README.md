@@ -1,75 +1,76 @@
 # Hiking GPS
 
-A live minimap for PEAK, on a handheld GPS you carry.
+![Hiking GPS](https://raw.githubusercontent.com/abra9987/Peak-Hiking-GPS/main/docs/media/hero.png)
 
-The screen shows the mountain as the game itself draws it — real terrain, real
-colours, seen from above — with markers for the things worth walking towards.
-Press `M` and it is there.
+A live minimap for PEAK, on a handheld GPS you carry. Press `M` and the mountain
+is there — real terrain, drawn by the game itself, seen from above.
 
-**Client side.** Only you install it. Nobody else in the lobby needs it, the
-host does not need it, and it changes nothing anyone else sees.
+**Client side.** Only you install it. Nobody else in the lobby needs it, the host
+does not need it, and it changes nothing anyone else sees.
 
 ## What it shows
 
 - **The real mountain.** Not a redrawn diagram: a camera looking down at the
   world you are standing in, so what is on the screen is what is under you.
-- **Chests, campfires, statues, belltowers, capybaras and the scoutmaster** —
-  drawn as pictures of themselves rather than as coloured dots. Opened chests
-  disappear, so the map only ever points at loot that is still there.
-- **Height, which is what PEAK is about.** A marker grows and lightens when it
-  is above you and shrinks and darkens when it is below, because thirty metres
-  sideways and thirty metres up are nothing alike on this mountain: one is a
-  walk, the other may have no route at all.
+- **Chests, campfires, statues, belltowers, capybaras and the scoutmaster**, each
+  drawn as a picture of itself rather than a coloured dot. Opened chests
+  disappear, so the map only points at loot that is still there.
+- **Height, which is what PEAK is about.** A marker grows and lightens above you
+  and shrinks and darkens below — thirty metres sideways and thirty metres up are
+  nothing alike on this mountain.
 - **Everyone else on the climb**, at any distance.
-- **Your altitude** and the distance and height difference to the nearest
-  unopened chest, along the bottom of the screen.
+- **Your altitude** and the distance to the nearest unopened chest.
 
-The icons are not shipped with the mod. Each one is photographed from your own
-copy of the game, once, the first time you see that kind of thing — so nothing
-of PEAK's artwork travels, and the pictures always match the version you have.
+![In the shore](https://raw.githubusercontent.com/abra9987/Peak-Hiking-GPS/main/docs/media/shot-shore.jpg)
+
+## No game assets ship with this mod
+
+The GPS itself is drawn for the mod. Every marker icon is photographed from your
+own copy of the game, once, the first time you see that kind of thing — so the
+pictures always match the version you have, and nothing of PEAK's artwork
+travels.
 
 ## Controls
 
 | Key | |
 |---|---|
 | `M` | Show or hide the GPS |
-| `=` / `-` | Zoom in and out, through fixed steps from 20 m to 2000 m across |
-| `N` | Tilt the view: straight down, 75°, 45°. A tilted view shows how much climbing lies between you and somewhere |
+| `=` / `-` | Zoom, in fixed steps from 20 m to 2000 m across |
+| `N` | Tilt: straight down, 75°, 45° |
 | `F11` | Save a screenshot |
 
-## Installing
+## Install
 
-1. Install **BepInEx 5** for PEAK (the `BepInExPack PEAK` package). A mod
-   manager does this for you.
-2. Drop `HikingGPS.dll` into `BepInEx/plugins/`, or install through the manager.
-3. Launch the game. The map appears about ten seconds after a run starts, once
-   your character is on their feet.
+Install it with a mod manager, or drop `HikingGPS.dll` into `BepInEx/plugins/`
+by hand. Needs **BepInEx 5** (`BepInExPack PEAK`), which the manager installs
+for you.
+
+The map appears about ten seconds after a run starts, once your character is on
+their feet.
 
 ## Settings
 
 Everything is in `BepInEx/config/com.abra9987.hikinggps.cfg`, written on first
-launch. The ones worth knowing:
+launch.
 
 | Setting | |
 |---|---|
-| `Minimap / SizePixels` | How tall the GPS is drawn. 360 is about a third of a 1080p screen |
-| `Minimap / Corner` | Which corner it hangs in. `TopRight`, `TopLeft`, `BottomRight`, `BottomLeft` |
-| `Minimap / MarginXPixels`, `MarginYPixels` | How far in from the edges |
-| `Minimap / PlayerMarkerColour` | The colour of the arrow that is you, as `#RRGGBB` |
-| `Minimap / StartZoomStep` | Which zoom step it opens on, counting the tightest as 1 |
-| `Minimap / MarkerSizePixels` | How large the markers are |
-| `Minimap / Icons` | Turn the photographed icons off and go back to plain markers |
-| `Minimap / StartDelaySeconds` | How long after the mountain loads before the map opens |
+| `SizePixels` | How large the GPS is drawn |
+| `Corner` | Which corner it hangs in |
+| `MarginXPixels`, `MarginYPixels` | How far in from the edges |
+| `PlayerMarkerColour` | The colour of the arrow that is you, as `#RRGGBB` |
+| `StartZoomStep` | Which zoom step it opens on |
+| `MarkerSizePixels` | How large the markers are |
+| `Icons` | Turn the photographed icons off, back to plain markers |
+| `StartDelaySeconds` | How long after the mountain loads before the map opens |
 
 Both top corners are clear of PEAK's own HUD. The bottom two are not: at the
 default margin the GPS covers the stamina bar on the left and the item slots on
-the right. If you want it down there, raise `MarginYPixels` to around 95 in the
-bottom-left corner and 115 in the bottom-right, and the HUD comes back out from
-under it.
+the right. To use them, raise `MarginYPixels` to about 95 bottom-left and 115
+bottom-right.
 
-Leave everything under `Automation` alone. It exists to develop the mod: it
-takes the game over, drives it into a solo run by itself and can quit for you.
-It is off by default and there is no reason to turn it on to play.
+Leave everything under `Automation` alone — it exists to develop the mod, takes
+the game over and can quit for you. It is off by default.
 
 ## Notes
 
@@ -79,7 +80,4 @@ It is off by default and there is no reason to turn it on to play.
 - Please do not report bugs to Aggro Crab or Landfall while running mods.
   Uninstall first, check the problem is still there, and only then report it.
 
-## Credits
-
-The navigator artwork is original, drawn for this mod. Everything else on the
-screen is PEAK's own, rendered live by the game and never copied.
+Source and issues: [github.com/abra9987/Peak-Hiking-GPS](https://github.com/abra9987/Peak-Hiking-GPS)

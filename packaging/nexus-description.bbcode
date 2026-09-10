@@ -1,0 +1,76 @@
+[size=5][b]Hiking GPS[/b][/size]
+
+A live minimap for PEAK, on a handheld GPS you carry. Press [b]M[/b] and the mountain is there — real terrain, drawn by the game itself, seen from above.
+
+[b]Client side.[/b] Only you install it. Nobody else in the lobby needs it, the host does not need it, and it changes nothing anyone else sees.
+
+[line]
+
+[size=4][b]What it shows[/b][/size]
+
+[list]
+[*][b]The real mountain.[/b] Not a redrawn diagram: a camera looking down at the world you are standing in, so what is on the screen is what is under you.
+[*][b]Chests, campfires, statues, belltowers, capybaras and the scoutmaster[/b], each drawn as a picture of itself rather than a coloured dot. Opened chests disappear, so the map only points at loot that is still there.
+[*][b]Height, which is what PEAK is about.[/b] A marker grows and lightens above you and shrinks and darkens below — thirty metres sideways and thirty metres up are nothing alike on this mountain.
+[*][b]Everyone else on the climb[/b], at any distance.
+[*][b]Your altitude[/b] and the distance to the nearest unopened chest.
+[/list]
+
+[line]
+
+[size=4][b]No game assets ship with this mod[/b][/size]
+
+The GPS itself is drawn for the mod. Every marker icon is photographed from your own copy of the game, once, the first time you see that kind of thing — so the pictures always match the version you have, and nothing of PEAK's artwork travels.
+
+[line]
+
+[size=4][b]Controls[/b][/size]
+
+[list]
+[*][b]M[/b] — show or hide the GPS
+[*][b]=[/b] / [b]-[/b] — zoom, in fixed steps from 20 m to 2000 m across
+[*][b]N[/b] — tilt: straight down, 75°, 45°
+[*][b]F11[/b] — save a screenshot
+[/list]
+
+[line]
+
+[size=4][b]Requirements[/b][/size]
+
+[b]BepInEx 5[/b] for PEAK. Install that first.
+
+[size=4][b]Installation[/b][/size]
+
+[list=1]
+[*]Install BepInEx 5 for PEAK.
+[*]Extract this archive over your PEAK folder, so the file lands at [i]BepInEx/plugins/HikingGPS/HikingGPS.dll[/i].
+[*]Launch the game. The map appears about ten seconds after a run starts, once your character is on their feet.
+[/list]
+
+To uninstall, delete that folder.
+
+[line]
+
+[size=4][b]Settings[/b][/size]
+
+Everything is in [i]BepInEx/config/com.abra9987.hikinggps.cfg[/i], written on first launch: the size of the GPS, which corner it hangs in, how far in from the edges, the colour of the arrow that is you, which zoom step it opens on, how large the markers are, and how long after the mountain loads before the map opens.
+
+Both top corners are clear of PEAK's own HUD. The bottom two are not: at the default margin the GPS covers the stamina bar on the left and the item slots on the right. To use them, raise [i]MarginYPixels[/i] to about 95 bottom-left and 115 bottom-right.
+
+Leave everything under [i]Automation[/i] alone — it exists to develop the mod, takes the game over and can quit for you. It is off by default.
+
+[line]
+
+[size=4][b]Notes[/b][/size]
+
+[list]
+[*]Mods generally disable Steam achievements. This one is no exception.
+[*]If PEAK crashes on startup with BepInEx installed, launching with [i]-dx12[/i] is the usual fix.
+[*]Please do not report bugs to Aggro Crab or Landfall while running mods. Uninstall first, check the problem is still there, and only then report it.
+[/list]
+
+[line]
+
+Source, issues and the MIT-licensed code: [url=https://github.com/abra9987/Peak-Hiking-GPS]github.com/abra9987/Peak-Hiking-GPS[/url]
+
+Unofficial fan project. Not affiliated with, endorsed or sponsored by Aggro Crab or Landfall Games.
