@@ -17,7 +17,22 @@ namespace PeakMapInteractive
     {
         public const string Guid = "com.abra9987.hikinggps";
         public const string Name = "Hiking GPS";
-        public const string Version = "1.0.0";
+
+        /// <summary>
+        /// Taken from the project file rather than written here.
+        ///
+        /// It used to be a literal, and it silently fell a version behind the
+        /// moment the project file moved: the packaging script reads the project
+        /// file, so a zip called 1.0.1 shipped an assembly announcing itself as
+        /// 1.0.0. The generated constant comes from the same &lt;Version&gt; the
+        /// script reads, so there is now one number instead of two that agree
+        /// only as long as somebody remembers both.
+        ///
+        /// Only the version is taken from it. The generated GUID and name are
+        /// derived from the assembly name and are not what this plugin calls
+        /// itself.
+        /// </summary>
+        public const string Version = MyPluginInfo.PLUGIN_VERSION;
 
         internal static Plugin Instance { get; private set; }
         internal static new ManualLogSource Logger { get; private set; }

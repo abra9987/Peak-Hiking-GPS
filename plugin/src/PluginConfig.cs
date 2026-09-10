@@ -230,16 +230,21 @@ namespace PeakMapInteractive
                     new AcceptableValueRange<int>(64, 1024)));
 
             ScreenshotKey = cfg.Bind(
-                "Debug", "ScreenshotKey", UnityEngine.KeyCode.F11,
+                "Debug", "ScreenshotKey", UnityEngine.KeyCode.None,
                 "Saves a full-resolution screenshot to a 'shots' folder in the output " +
-                "directory. Here because the pictures a mod page needs are taken while " +
-                "playing, and stopping to fight the clipboard loses the moment.");
+                "directory. Unbound, because it exists to photograph the map while working " +
+                "on the mod, and a player already has Steam, the graphics driver and Windows " +
+                "itself for screenshots — three keys that do it better than a fourth would. " +
+                "Set a key here if you are working on the mod.");
 
             MinimapBakeAllKey = cfg.Bind(
-                "Minimap", "BakeAllKey", UnityEngine.KeyCode.F10,
+                "Minimap", "BakeAllKey", UnityEngine.KeyCode.None,
                 "Photographs every kind of thing anywhere on the loaded mountain at once, "  +
-                "rather than waiting to walk past one of each. Meant for working on the "  +
-                "icons: the nearest statue can be five minutes of climbing away.");
+                "rather than waiting to walk past one of each. Unbound: it is meant for "  +
+                "working on the icons, where the nearest statue can be five minutes of "  +
+                "climbing away, and it is a lot of work to set off by leaning on a key "  +
+                "mid-climb. Playing needs none of it — an icon is photographed the first "  +
+                "time you see that kind of thing anyway.");
 
             MinimapAutoBakeIcons = cfg.Bind(
                 "Minimap", "AutoBakeIcons", false,

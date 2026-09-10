@@ -41,7 +41,6 @@ Install **BepInEx 5** for PEAK, then drop `HikingGPS.dll` into
 | `M` | Show or hide the GPS |
 | `=` / `-` | Zoom, in fixed steps from 20 m to 2000 m across |
 | `N` | Tilt: straight down, 75°, 45° |
-| `F11` | Save a screenshot |
 
 Size, corner, margins and the colour of your own arrow are all settings.
 [`packaging/README.md`](packaging/README.md) is the mod's own readme and lists

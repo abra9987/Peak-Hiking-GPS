@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.0.1
+
+- **Unbound the two development hotkeys.** `F11` saved a screenshot and `F10`
+  photographed every kind of thing on the mountain at once. Both exist to work
+  on the mod, neither belongs on a player's keyboard: Steam, the graphics driver
+  and Windows all take screenshots already, and F10 set off a lot of work if you
+  leaned on it mid-climb. Both keys are still in the config for anyone who wants
+  them, just not bound to anything by default.
+
+Nothing else changed. The map, the markers and the settings are as they were.
+
 ## 1.0.0
 
 First release. Tested against PEAK 2.4.b.

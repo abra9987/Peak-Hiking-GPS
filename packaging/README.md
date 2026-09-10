@@ -37,7 +37,6 @@ travels.
 | `M` | Show or hide the GPS |
 | `=` / `-` | Zoom, in fixed steps from 20 m to 2000 m across |
 | `N` | Tilt: straight down, 75°, 45° |
-| `F11` | Save a screenshot |
 
 ## Install
 
