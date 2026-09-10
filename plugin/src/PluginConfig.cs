@@ -62,6 +62,21 @@ namespace PeakMapInteractive
         public readonly ConfigEntry<float> TrackerScale;
         public readonly ConfigEntry<float> TrackerReadoutScale;
         public readonly ConfigEntry<float> TrackerArrowScale;
+        public readonly ConfigEntry<float> TrackerHoldX;
+        public readonly ConfigEntry<float> TrackerHoldY;
+        public readonly ConfigEntry<float> TrackerHoldZ;
+        public readonly ConfigEntry<float> TrackerTilt;
+        public readonly ConfigEntry<float> TrackerOffsetUp;
+        public readonly ConfigEntry<float> TrackerOffsetAway;
+        public readonly ConfigEntry<float> TrackerGripAcross;
+        public readonly ConfigEntry<float> TrackerGripBehind;
+        public readonly ConfigEntry<float> TrackerGripHeight;
+        public readonly ConfigEntry<float> TrackerGripAngleX;
+        public readonly ConfigEntry<float> TrackerGripAngleY;
+        public readonly ConfigEntry<float> TrackerGripAngleZ;
+        public readonly ConfigEntry<UnityEngine.KeyCode> ReloadConfigKey;
+        public readonly ConfigEntry<UnityEngine.KeyCode> SpawnDeviceKey;
+        public readonly ConfigEntry<string> SpawnItemName;
 
         public PluginConfig(ConfigFile cfg)
         {
@@ -246,6 +261,27 @@ namespace PeakMapInteractive
                 "itself for screenshots — three keys that do it better than a fourth would. " +
                 "Set a key here if you are working on the mod.");
 
+            ReloadConfigKey = cfg.Bind(
+                "Debug", "ReloadConfigKey", UnityEngine.KeyCode.None,
+                "Re-reads this file while the game is running, so a setting can be tried " +
+                "without restarting. Unbound: it exists for tuning the mod, not for " +
+                "playing it. Only the settings that act on their own change take effect " +
+                "at once — the grip points do; keys and sizes are read every frame anyway.");
+
+            SpawnDeviceKey = cfg.Bind(
+                "Debug", "SpawnDeviceKey", UnityEngine.KeyCode.None,
+                "Puts a navigator straight into your hands, wherever you are — the airport " +
+                "included, where the mirror shows how it is held. Unbound: it is for " +
+                "working on the grip, and a player is meant to find the thing in a " +
+                "suitcase. Needs PEAKLib, like the item itself.");
+
+            SpawnItemName = cfg.Bind(
+                "Debug", "SpawnItemName", "",
+                "What SpawnDeviceKey hands over. Empty for the navigator; otherwise the " +
+                "name of one of the game's own items, such as Compass or Passport, so " +
+                "the two can be held one after the other in front of the airport mirror " +
+                "and compared.");
+
             MinimapBakeAllKey = cfg.Bind(
                 "Minimap", "BakeAllKey", UnityEngine.KeyCode.None,
                 "Photographs every kind of thing anywhere on the loaded mountain at once, "  +
@@ -296,7 +332,7 @@ namespace PeakMapInteractive
                 "souvenir.");
 
             TrackerScale = cfg.Bind(
-                "Tracker", "Scale", 1f,
+                "Tracker", "Scale", 3.5f,
                 new ConfigDescription(
                     "How large the navigator is, as a multiple of its real size. It is drawn at " +
                     "90 by 120 millimetres, which is what a handheld unit measures and is also " +
@@ -306,7 +342,7 @@ namespace PeakMapInteractive
                     "together, so the hands keep hold of it. Held in the game it reads as far " +
                     "smaller than its measurements suggest, because PEAK's characters have " +
                     "enormous hands and every prop is drawn to match them rather than to " +
-                    "scale. Three is a sensible place to start.",
+                    "scale. Three and a half was settled by holding it.",
                     new AcceptableValueRange<float>(0.5f, 6f)));
 
             TrackerReadoutScale = cfg.Bind(
@@ -327,6 +363,127 @@ namespace PeakMapInteractive
                     "resolution; on a device the same picture arrives much smaller, and the one " +
                     "marker anybody looks for first vanished into the terrain.",
                     new AcceptableValueRange<float>(1f, 8f)));
+
+            // Where the game holds the item, relative to the head and in the
+            // direction of the look: right, up and forward, in metres. This is
+            // Item.defaultPos, which every one of the game's items sets in its
+            // prefab and which a device built in code left at zero — so the
+            // hold point sat inside the head, the arms folded back to reach it,
+            // and on pick-up the game slid the device from 0.7 m in front into
+            // the face over a fifth of a second, which read as the arms slowly
+            // winding up. None of the grip angles could fix that, because
+            // none of them was the cause.
+            TrackerHoldX = cfg.Bind(
+                "Tracker", "HoldX", 0f,
+                new ConfigDescription(
+                    "Where the device is held, to the right of the head, in metres.",
+                    new AcceptableValueRange<float>(-1f, 1f)));
+
+            TrackerHoldY = cfg.Bind(
+                "Tracker", "HoldY", -0.25f,
+                new ConfigDescription(
+                    "Where the device is held, above the head, in metres. Negative is below.",
+                    new AcceptableValueRange<float>(-1.5f, 1f)));
+
+            TrackerHoldZ = cfg.Bind(
+                "Tracker", "HoldZ", 0.85f,
+                new ConfigDescription(
+                    "Where the device is held, in front of the head, in metres. Zero is " +
+                    "inside the head, which is what an item gets when nobody says otherwise.",
+                    new AcceptableValueRange<float>(0f, 1.5f)));
+
+            TrackerTilt = cfg.Bind(
+                "Tracker", "TiltDegrees", 10f,
+                new ConfigDescription(
+                    "How far the top of the device leans back towards the face, in degrees. " +
+                    "Zero holds it square to the line of sight; a phone in real hands is " +
+                    "tipped ten or fifteen degrees so the screen faces the eyes.",
+                    new AcceptableValueRange<float>(-45f, 45f)));
+
+            // Where the case sits relative to the point the game holds an item
+            // at. Every item is held at the same spot in front of the chest;
+            // what differs is where each one's model sits inside its own root.
+            // The compass's mesh is 15 centimetres above its root, which is
+            // why it rides above the hands rather than between them, and why
+            // a device placed exactly at the root sat too close to the face
+            // with the arms folded back into the body to reach it.
+            TrackerOffsetUp = cfg.Bind(
+                "Tracker", "OffsetUp", 0f,
+                new ConfigDescription(
+                    "How far above the held position the device sits, in metres at Scale " +
+                    "1. The game's compass rides 0.15 above its own. Negative is below.",
+                    new AcceptableValueRange<float>(-0.3f, 0.3f)));
+
+            TrackerOffsetAway = cfg.Bind(
+                "Tracker", "OffsetAway", 0f,
+                new ConfigDescription(
+                    "How far from the face the device sits, in metres at Scale 1, beyond " +
+                    "where the game holds it. Positive pushes it away, negative pulls it in.",
+                    new AcceptableValueRange<float>(-0.3f, 0.3f)));
+
+            // Where the hands take hold, in the device's own metres before
+            // Scale. Settings rather than constants because the only judge of a
+            // grip is a person looking at one, and every pass so far was
+            // reasoned from numbers and wrong. Changing any of these in a
+            // running game moves the grip points at once; the game welds the
+            // hands on at pick-up, so drop the device and take it again to see.
+            TrackerGripAcross = cfg.Bind(
+                "Tracker", "GripAcross", 0.05f,
+                new ConfigDescription(
+                    "How far each hand sits from the centre of the device, sideways, in " +
+                    "metres at Scale 1. The case is 0.045 wide from the centre to its edge, " +
+                    "so 0.045 puts the palms on its sides and more than that holds it from " +
+                    "outside. Multiplied by Scale along with the case, so at Scale 3 a " +
+                    "centimetre here moves a hand three.",
+                    new AcceptableValueRange<float>(0f, 0.2f)));
+
+            TrackerGripBehind = cfg.Bind(
+                "Tracker", "GripBehind", -0.033f,
+                new ConfigDescription(
+                    "How far behind the middle of the case the hands sit, in metres at " +
+                    "Scale 1. Positive is towards the back cover, negative towards the glass. " +
+                    "Too far back and the hands meet behind the device holding nothing.",
+                    new AcceptableValueRange<float>(-0.1f, 0.1f)));
+
+            TrackerGripHeight = cfg.Bind(
+                "Tracker", "GripHeight", -0.012f,
+                new ConfigDescription(
+                    "How far up the device the hands sit, in metres at Scale 1, from the " +
+                    "model's origin. The case is 0.12 tall; low is how a handheld is held, " +
+                    "with the thumbs near the buttons.",
+                    new AcceptableValueRange<float>(-0.15f, 0.15f)));
+
+            // The left hand's rotation in the item's frame, as the three Unity
+            // Euler angles; the right hand is its mirror. The item's own frame
+            // while held is +X to the right, +Y up and +Z away from the face.
+            //
+            // The defaults are the game's passport, held open in two hands in
+            // front of the face: (270, 202, 0). Its bottles use (270, 195, 0)
+            // and its compass (315, 161, 45). Three angles measured off a
+            // screenshot never matched what a person saw, because the angles
+            // were never the problem; what they are for now is a nudge.
+            TrackerGripAngleX = cfg.Bind(
+                "Tracker", "GripAngleX", 270f,
+                new ConfigDescription(
+                    "Left hand rotation about the item's sideways axis, in degrees. 270 is " +
+                    "what every two-handed item in the game uses. The right hand mirrors it.",
+                    new AcceptableValueRange<float>(0f, 360f)));
+
+            TrackerGripAngleY = cfg.Bind(
+                "Tracker", "GripAngleY", 202f,
+                new ConfigDescription(
+                    "Left hand rotation about the vertical, in degrees. 180 is two parallel " +
+                    "hands; above it the fingers turn in towards each other. The passport " +
+                    "uses 202, bottles 195. The right hand takes the opposite angle.",
+                    new AcceptableValueRange<float>(0f, 360f)));
+
+            TrackerGripAngleZ = cfg.Bind(
+                "Tracker", "GripAngleZ", 0f,
+                new ConfigDescription(
+                    "Left hand rotation about the item's forward axis, in degrees: the roll " +
+                    "of the wrist. Zero for the passport and the bottles, 45 for the compass. " +
+                    "The right hand takes the opposite angle.",
+                    new AcceptableValueRange<float>(0f, 360f)));
 
             TrackerPreview = cfg.Bind(
                 "Tracker", "PreviewModel", false,

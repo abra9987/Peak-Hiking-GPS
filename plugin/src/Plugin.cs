@@ -112,6 +112,91 @@ namespace PeakMapInteractive
             Logger.LogInfo($"Automation: autoRun={Settings.AutoRun.Value}, quitWhenDone={Settings.QuitWhenDone.Value}");
         }
 
+        private float _nextHeldLog;
+
+        /// <summary>
+        /// What the local character is holding and where its hands are on
+        /// it, every two seconds. Only while the spawn key is bound, so a
+        /// player's log stays quiet. The point is to hold the game's compass
+        /// and then the device, and read off what differs between them.
+        /// </summary>
+        private void LogHeldItem()
+        {
+            if (Time.unscaledTime < _nextHeldLog) return;
+            _nextHeldLog = Time.unscaledTime + 2f;
+
+            Character character = Character.localCharacter;
+            Item held = character == null || character.data == null ? null : character.data.currentItem;
+            if (held == null) return;
+
+            Transform l = held.transform.Find("Hand_L");
+            Transform r = held.transform.Find("Hand_R");
+            Rigidbody rig = held.GetComponent<Rigidbody>();
+            var refs = character.refs;
+
+            Logger.LogInfo(
+                $"Held: '{held.name}' mass {held.mass} rigMass {(rig == null ? -1f : rig.mass)} " +
+                $"inertia {(rig == null ? Vector3.zero : rig.inertiaTensor).ToString("F4")} " +
+                $"com {(rig == null ? Vector3.zero : rig.centerOfMass).ToString("F3")} " +
+                $"scale {held.transform.lossyScale.ToString("F2")} forceScale {held.forceScale} " +
+                $"defaultPos {held.defaultPos.ToString("F3")} defaultForward {held.defaultForward.ToString("F2")} | " +
+                $"  Hand_L {(l == null ? "missing" : l.localPosition.ToString("F3") + " euler " + l.localEulerAngles.ToString("F1"))} | " +
+                $"  Hand_R {(r == null ? "missing" : r.localPosition.ToString("F3") + " euler " + r.localEulerAngles.ToString("F1"))} | " +
+                $"  item at {held.transform.position.ToString("F2")} fwd {held.transform.forward.ToString("F2")} " +
+                $"anim item at {refs.animationItemTransform.position.ToString("F2")} fwd {refs.animationItemTransform.forward.ToString("F2")} | " +
+                $"  IK L {refs.IKHandTargetLeft.position.ToString("F2")} / {refs.IKHandTargetLeft.rotation.eulerAngles.ToString("F0")} " + " | " +
+                $"  IK R {refs.IKHandTargetRight.position.ToString("F2")} / {refs.IKHandTargetRight.rotation.eulerAngles.ToString("F0")} ");
+        }
+
+        /// <summary>
+        /// A navigator in the local character's hands, the way the game's own
+        /// debug command hands out items: made through Photon so it has a
+        /// view, then picked up through <c>Item.Interact</c> so the hands are
+        /// welded on exactly as they would be for one found in a suitcase.
+        /// </summary>
+        private void SpawnDeviceInHand()
+        {
+            Character character = Character.localCharacter;
+            if (character == null)
+            {
+                Logger.LogWarning("Spawn: there is no local character yet.");
+                return;
+            }
+
+            string other = Settings.SpawnItemName.Value?.Trim();
+            GameObject spawned;
+
+            if (string.IsNullOrEmpty(other))
+            {
+                if (!Tracker.TrackerItem.Registered)
+                {
+                    Logger.LogWarning("Spawn: the item is not registered; is PEAKLib installed?");
+                    return;
+                }
+                spawned = Automation.HandShot.Spawn(character);
+            }
+            else
+            {
+                // One of the game's own, by the same path its debug command uses.
+                try
+                {
+                    spawned = Photon.Pun.PhotonNetwork.Instantiate(
+                        "0_Items/" + other, character.Center + Vector3.up * 0.5f, Quaternion.identity, 0);
+                }
+                catch (System.Exception error)
+                {
+                    Logger.LogWarning($"Spawn: could not spawn '{other}': {error.Message}");
+                    return;
+                }
+            }
+
+            Item item = spawned == null ? null : spawned.GetComponent<Item>();
+            if (item == null) return;
+
+            item.Interact(character);
+            Logger.LogInfo($"Spawn: '{item.name}' handed over.");
+        }
+
         /// <summary>
         /// Watches for the map becoming available, and for the manual hotkey.
         ///
@@ -140,6 +225,19 @@ namespace PeakMapInteractive
             TryRegisterItem();
 
             if (Input.GetKeyDown(Settings.ScreenshotKey.Value)) Snapshot();
+
+            // Re-read the config file. BepInEx does not watch it, and rewrites
+            // it from memory on exit, so this is the only way an edit made
+            // while the game runs reaches the game rather than being lost.
+            if (Input.GetKeyDown(Settings.ReloadConfigKey.Value))
+            {
+                Config.Reload();
+                Logger.LogInfo("Config reloaded from disk.");
+            }
+
+            if (Input.GetKeyDown(Settings.SpawnDeviceKey.Value)) SpawnDeviceInHand();
+
+            if (Settings.SpawnDeviceKey.Value != KeyCode.None) LogHeldItem();
 
             if (Input.GetKeyDown(Settings.CaptureHotkey.Value))
             {

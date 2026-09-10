@@ -65,15 +65,19 @@ namespace PeakMapInteractive.Tracker
         /// correctly, in both hands, with a thumb across the map.
         /// </summary>
         //
-        // On the case, not beside it. The first pass put them a centimetre
-        // outside each edge and two behind the back, which is invisible at the
-        // device's true size and absurd once Scale is raised: the grips scale
-        // with the case but hands do not, so at three times the palms hovered
-        // three centimetres clear of it, holding nothing.
-        private const float GripAcross = 0.042f;   // inside the 89.6 mm case, palms on its sides
-        private const float GripBehind = 0.006f;   // just behind mid-depth, fingers round the back
-        private const float GripHeight = 0.040f;   // low, near the buttons, the way a handheld is held
-        private const float GripSplay = 15f;
+        // The numbers live in the config, not here. Three passes at them were
+        // reasoned from the case's measurements and each was wrong in a way
+        // only a person holding the thing could see: hands meeting behind the
+        // case, palms on its sides but wrists wrenched. A setting can be
+        // changed in a running game and looked at in the same minute; a
+        // constant costs a build and a restart per guess. Once a grip is found
+        // by eye, its numbers become the defaults in PluginConfig.
+        private static float GripAcross => Plugin.Settings.TrackerGripAcross.Value;
+        private static float GripBehind => Plugin.Settings.TrackerGripBehind.Value;
+        private static float GripHeight => Plugin.Settings.TrackerGripHeight.Value;
+        private static float GripAngleX => Plugin.Settings.TrackerGripAngleX.Value;
+        private static float GripAngleY => Plugin.Settings.TrackerGripAngleY.Value;
+        private static float GripAngleZ => Plugin.Settings.TrackerGripAngleZ.Value;
 
         /// <summary>
         /// How heavy it is, in the units the game's own items use.
@@ -117,11 +121,20 @@ namespace PeakMapInteractive.Tracker
             Object.DontDestroyOnLoad(device);
             device.SetActive(false);
 
-            // Scaled at the root so that the case, its collision box and the
-            // grip points all grow together. Scaling only the model would leave
-            // the hands where they were and put them inside a bigger case.
+            // Scaled on the model, never on the root.
+            //
+            // The root carries the Rigidbody, and the game welds each hand to
+            // it with a FixedJoint. Unity's joints do not support a scaled
+            // body: the joint frames come out wrong by the scale, the solver
+            // pulls against the error every step, and what a player sees is
+            // the palm holding still while the forearm winds slowly through
+            // ninety degrees. Three passes at the grip angles could not fix
+            // it because none of them was the cause. The model and its
+            // collider scale together as children; the grip points and the
+            // centre of mass are multiplied by hand.
             float scale = Mathf.Clamp(Plugin.Settings.TrackerScale.Value, 0.5f, 6f);
-            device.transform.localScale = Vector3.one * scale;
+            model.transform.localScale = Vector3.one * scale;
+            PlaceModel(model.transform);
 
             AddGrips(device.transform);
 
@@ -131,16 +144,14 @@ namespace PeakMapInteractive.Tracker
 
             Item item = device.AddComponent<Item>();
             item.mass = Mass;
+            item.defaultPos = HoldPos;
 
-            // Keep the size we were given.
-            //
-            // Item.SetState forces localScale back to one every time an item
-            // changes hands — held, on the ground, and to a half in a backpack.
-            // With it left on, Scale did nothing the moment anybody picked the
-            // device up: it sat oversized in the chest and shrank back to its
-            // true 90 millimetres in the hands, which read as two different
-            // objects rather than one setting not working.
-            item.forceScale = false;
+            // The game's own scale handling is left on. It resets the root's
+            // scale to one whenever the item changes hands, and to a half in a
+            // backpack; with the size on the model rather than the root, that
+            // is now harmless — and a device that shrinks to fit a backpack is
+            // what every other item does.
+            item.forceScale = true;
 
             // Every one of these is read by PEAKLib while registering, and a
             // null string there is an exception inside its translation setup
@@ -162,6 +173,7 @@ namespace PeakMapInteractive.Tracker
             AddLoot(device);
 
             Prefab = device;
+            WatchGripSettings();
             return true;
         }
 
@@ -190,16 +202,123 @@ namespace PeakMapInteractive.Tracker
         /// </summary>
         private static void AddGrips(Transform root)
         {
-            Grip(root, "Hand_L", -GripAcross, 180f + GripSplay);
-            Grip(root, "Hand_R", GripAcross, 180f - GripSplay);
+            foreach (string name in new[] { "Hand_L", "Hand_R" })
+            {
+                var holder = new GameObject(name);
+                holder.transform.SetParent(root, worldPositionStays: false);
+            }
+            PlaceGrips(root);
         }
 
-        private static void Grip(Transform root, string name, float across, float turn)
+        /// <summary>
+        /// Puts both grip points where the settings currently say. Called when
+        /// the device is built and again whenever a grip setting changes.
+        /// </summary>
+        /// <summary>
+        /// Where the case sits inside the item root, which is the point the
+        /// game holds an item at. Multiplied by Scale like the grips, so the
+        /// device keeps its proportions as it grows.
+        /// </summary>
+        internal static Vector3 ModelOffset
         {
-            var holder = new GameObject(name);
-            holder.transform.SetParent(root, worldPositionStays: false);
-            holder.transform.localPosition = new Vector3(across, GripHeight, GripBehind);
-            holder.transform.localEulerAngles = new Vector3(270f, 0f, turn);
+            get
+            {
+                float scale = Mathf.Clamp(Plugin.Settings.TrackerScale.Value, 0.5f, 6f);
+                return new Vector3(0f, Plugin.Settings.TrackerOffsetUp.Value, Plugin.Settings.TrackerOffsetAway.Value) * scale;
+            }
+        }
+
+        /// <summary>Where the game holds it: right, up and forward of the head.</summary>
+        private static Vector3 HoldPos => new Vector3(
+            Plugin.Settings.TrackerHoldX.Value, Plugin.Settings.TrackerHoldY.Value, Plugin.Settings.TrackerHoldZ.Value);
+
+        private static void PlaceModel(Transform model)
+        {
+            if (model == null) return;
+            model.localPosition = ModelOffset;
+            model.localScale = Vector3.one * Mathf.Clamp(Plugin.Settings.TrackerScale.Value, 0.5f, 6f);
+
+            // Turned to face its owner, then tipped back about the item's own
+            // sideways axis so the top of the case leans towards the face.
+            model.localRotation =
+                Quaternion.AngleAxis(Plugin.Settings.TrackerTilt.Value, Vector3.right) * Quaternion.Euler(0f, 180f, 0f);
+        }
+
+        private static void PlaceGrips(Transform root)
+        {
+            Place(root.Find("Hand_L"), -1f);
+            Place(root.Find("Hand_R"), 1f);
+        }
+
+        /// <summary>
+        /// One hand, at <paramref name="side"/> -1 for the left and +1 for the
+        /// right. The settings describe the left hand; the right is its
+        /// reflection in the plane down the middle of the case, which for
+        /// Unity's Euler angles is the same X with Y and Z negated. Checked
+        /// against the game's own items: every pair in the database, bottles
+        /// and compass alike, obeys exactly that.
+        /// </summary>
+        private static void Place(Transform hand, float side)
+        {
+            if (hand == null) return;
+            float scale = Mathf.Clamp(Plugin.Settings.TrackerScale.Value, 0.5f, 6f);
+            hand.localPosition = new Vector3(side * GripAcross, GripHeight, GripBehind) * scale;
+            hand.localEulerAngles = side < 0f
+                ? new Vector3(GripAngleX, GripAngleY, GripAngleZ)
+                : new Vector3(GripAngleX, -GripAngleY, -GripAngleZ);
+        }
+
+        /// <summary>
+        /// Moves the grip points on the pattern and on every device already in
+        /// the world, so a setting changed mid-game is seen in the same game.
+        ///
+        /// The game welds a hand to these points once, at pick-up, with a
+        /// <c>FixedJoint</c>; a device already in somebody's hands keeps its old
+        /// grip until it is dropped and taken again. That is said in the log
+        /// rather than worked around, because re-welding a live joint is the
+        /// game's business and a drop costs a second.
+        /// </summary>
+        private static void RefreshGrips()
+        {
+            if (!Registered) return;
+
+            PlaceGrips(Prefab.transform);
+            PlaceModel(Prefab.transform.Find("Model"));
+            Prefab.GetComponent<Item>().defaultPos = HoldPos;
+
+            ushort id = Prefab.GetComponent<Item>().itemID;
+            int moved = 0;
+            foreach (Item item in Object.FindObjectsOfType<Item>(true))
+            {
+                if (item.itemID != id || item.gameObject == Prefab) continue;
+                PlaceGrips(item.transform);
+                PlaceModel(item.transform.Find("Model"));
+                item.defaultPos = HoldPos;
+                moved++;
+            }
+
+            Plugin.Logger.LogInfo(
+                $"Grip: across {GripAcross:0.000} behind {GripBehind:0.000} height {GripHeight:0.000} " +
+                $"angles ({GripAngleX:0}, {GripAngleY:0}, {GripAngleZ:0}) offset {ModelOffset:F3} hold {HoldPos:F2}; moved on {moved} device(s). " +
+                "Drop and pick up to see it.");
+        }
+
+        private static void WatchGripSettings()
+        {
+            var s = Plugin.Settings;
+            s.TrackerScale.SettingChanged += (_, __) => RefreshGrips();
+            s.TrackerTilt.SettingChanged += (_, __) => RefreshGrips();
+            s.TrackerHoldX.SettingChanged += (_, __) => RefreshGrips();
+            s.TrackerHoldY.SettingChanged += (_, __) => RefreshGrips();
+            s.TrackerHoldZ.SettingChanged += (_, __) => RefreshGrips();
+            s.TrackerOffsetUp.SettingChanged += (_, __) => RefreshGrips();
+            s.TrackerOffsetAway.SettingChanged += (_, __) => RefreshGrips();
+            s.TrackerGripAcross.SettingChanged += (_, __) => RefreshGrips();
+            s.TrackerGripBehind.SettingChanged += (_, __) => RefreshGrips();
+            s.TrackerGripHeight.SettingChanged += (_, __) => RefreshGrips();
+            s.TrackerGripAngleX.SettingChanged += (_, __) => RefreshGrips();
+            s.TrackerGripAngleY.SettingChanged += (_, __) => RefreshGrips();
+            s.TrackerGripAngleZ.SettingChanged += (_, __) => RefreshGrips();
         }
 
         /// <summary>

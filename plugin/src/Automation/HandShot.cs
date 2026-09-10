@@ -215,7 +215,7 @@ namespace PeakMapInteractive.Automation
         /// expecting a view with an id, and an item made any other way spends
         /// the rest of its life logging about not having one.
         /// </summary>
-        private static GameObject Spawn(Character character)
+        internal static GameObject Spawn(Character character)
         {
             string prefab = "0_Items/" + Tracker.TrackerItem.Prefab.name;
             Vector3 where = character.Center + Vector3.up * 0.5f;

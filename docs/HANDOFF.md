@@ -748,35 +748,34 @@ item whose `itemID` matches the registered one. By id rather than name: a clone
 carries "(Clone)" and the mod's prefix. The waking and sleeping chirps land on
 picking it up and putting it away, which is where they belonged all along.
 
-### The game resets an item's scale, so `forceScale` is off
+### The size lives on the model, not on the root
 
-`Item.forceScale` defaults to true, and `Item.SetState` acts on it at every
-change of state: `localScale` back to one when held and when on the ground, and
-to a half in a backpack. So `Tracker/Scale` appeared not to work — the device
-sat oversized in the chest and snapped back to its true ninety millimetres the
-instant anybody picked it up, which reads as two different objects rather than
-as one setting being overwritten.
+`Tracker/Scale` used to scale the item's root, and `forceScale` was turned off
+so the game would stop resetting it. Both are undone. The root is unit scale
+now, the model and its collider carry the size as children, and the grip
+points and centre of mass are multiplied by hand. `forceScale` is back on,
+so the device halves inside a backpack like every other item.
 
-Setting `forceScale = false` on the item keeps whatever scale it was built with.
-The cost is that it no longer shrinks to half inside a backpack; if that ever
-looks wrong, shrink it there deliberately rather than by turning this back on.
+The reason is the hands. The game welds each hand to the item's Rigidbody
+with a `FixedJoint`, and Unity's joints do not support a scaled body: the
+joint frames come out wrong by the scale and the solver pulls against the
+error every step. It was not the whole story of the grip (below), but it was
+a real fault, and a scaled Rigidbody is not worth having for any reason.
 
 **Blender is not involved.** The model is the size the device really is, and
 that is worth keeping: the setting exists precisely so the *apparent* size can
-be tuned without the file ever becoming a lie about the object.
+be tuned without the file ever becoming a lie about the object. `Scale` is
+now applied live, so it can be tried in a running game.
 
-### What playing it settled, and the one thing it did not
+### What playing it settled
 
-The first session with a person actually holding the device. Everything here
-came from that hour and not from a photograph.
+The first session with a person actually holding the device, and the second
+one, spent entirely in front of the airport mirror. Everything here came from
+those hours and not from a photograph.
 
 **Settled, do not re-open:**
 
-- **`Tracker/Scale = 3` is the right size.** At its true ninety millimetres the
-  device reads as a toy in PEAK's enormous hands; three times looks like a
-  navigator and the map on it is legible. This only started working once
-  `forceScale` was turned off — before that the setting appeared to do nothing
-  at all, because the game restored the scale the moment anyone picked it up.
+- **`Tracker/Scale = 3.5` is the right size**, held at the settled distance.
 - **`Tracker/ArrowScale = 3` is right too**, and the question is closed. At the
   drawn map's sixteen pixels the "you are here" arrow vanished into the terrain
   on a screen seen at a fraction of its render size.
@@ -786,31 +785,80 @@ came from that hour and not from a photograph.
   is registered — the real branch, with PEAKLib and without AutoRun.
 - **The buttons are seen to move and the sounds are heard.** Chirps on pick-up
   and put-away, clicks on zoom and tilt, the knock at the end of the ladder.
+- **The grip.** Settled, and the person holding it called it ideal. What it
+  actually was is the next section.
 
-**Not settled — the grip.** Three passes, none right, and the mistake each time
-was reasoning about it instead of looking:
+### The grip, and what it actually was
+
+Five passes at the hand angles were wrong, and every one of them was wrong
+for the same reason: the angles were never the problem. Two things were, and
+neither was visible from the grip code.
+
+**`Item.defaultPos` was zero.** Every item carries a point, relative to the
+head and in the direction of the look, where the game holds it — the
+animation rig's item anchor is put there, and the arms' IK targets are the
+`Hand_L`/`Hand_R` offsets from that anchor. The game's own items set it in
+their prefabs; the passport is held at (0, 0, 1), a metre straight ahead. A
+device built in code left it at the default, which is inside the head. So the
+hold point sat in the face, the arms folded back to reach it with the elbows
+by the ears, and on pick-up the game slid the device from 0.7 m in front
+into that point over a fifth of a second — which is what "the palm stays
+still while the forearm slowly winds round" was. `Tracker/HoldX`, `HoldY`,
+`HoldZ` set it now; the settled point is (0, -0.25, 0.85).
+
+**The root was scaled**, above. Fixed independently and worth fixing, but on
+its own it changed nothing anybody could see, because the hold point was
+still in the head.
+
+The settled numbers, all defaults now and all in `[Tracker]`:
 
 ```
-0.055 across, 0.022 behind   hands met behind the case, holding nothing
-0.042 across, 0.006 behind   hands on the sides but visibly wrenched
+Scale 3.5    HoldX 0  HoldY -0.25  HoldZ 0.85    TiltDegrees 10
+GripAcross 0.05  GripBehind -0.033  GripHeight -0.012
+GripAngleX 270   GripAngleY 202     GripAngleZ 0      (the passport's)
 ```
 
-The remaining complaint is that the wrists are twisted and **the hands need to
-be further apart — wider than either attempt so far.** The depth looks right at
-0.006; it was the 0.022 that made them meet behind, not the width. So the next
-move is `GripAcross` upwards from 0.055, keeping `GripBehind` where it is, and
-possibly widening `GripSplay` past 15 degrees so the palms turn to face each
-other rather than being forced parallel.
+The grip angles describe the left hand as Unity Euler angles in the item's
+frame; the right hand is the mirror, which for Euler angles is the same X
+with Y and Z negated — checked against every pair in the game's item
+database. `TiltDegrees` leans the top of the case back towards the face.
+`OffsetUp` / `OffsetAway` move the model inside the root and are zero.
 
-Worth remembering that these are the item's own units and everything scales with
-`Tracker/Scale`, so at three times a change of one centimetre moves a hand three.
-That is why small edits kept overshooting.
+**How it was found, which is the part to reuse.** Three things made the
+airport a workshop instead of a five-minute walk to a chest:
 
-**Known and deprioritised:** a thrown device slides on its face instead of
-tumbling. It is a flat slab, so this is partly honest physics, and the
-centre-of-mass bias added to make it land screen-up will be making it worse.
-Removing the vertical part of that bias and keeping only the backward part is
-the thing to try.
+- `Debug/SpawnDeviceKey` (bound to `F8` in the clone) hands over a navigator
+  wherever the character stands, through the same path as the game's own
+  debug command: `PhotonNetwork.Instantiate` then `Item.Interact`. With
+  `Debug/SpawnItemName` set it hands over one of the game's items instead —
+  `Compass`, `Passport` — so the two can be held in front of the same mirror.
+- `Debug/ReloadConfigKey` (`F9`) re-reads the config file; every grip setting
+  applies at once to the pattern and to every device in the world. The game
+  welds the hands at pick-up, so it is `F9`, drop, `F8`, look.
+- While the spawn key is bound, the log prints every two seconds what is
+  held and where its hands are: mass, inertia, `defaultPos`, the
+  `Hand_L`/`Hand_R` transforms, and the IK targets. Holding the passport and
+  then the device and reading the two lines side by side is what found
+  `defaultPos`; nothing about the grip code could have.
+
+Also read out of the game's files with UnityPy, which parses `Transform` and
+`GameObject` fine even though it fails on MonoBehaviours and meshes here:
+
+```
+Compass    Hand_L (-0.225, -0.052, -0.120) euler (315.0, 160.7,  45.0)   model +0.152 up
+Passport   Hand_L (-0.183, -0.184, -0.100) euler (270.0, 125.7, 125.7)   = (270, 251.4, 0)
+```
+
+The compass's model sits 15 cm above its root; that is why it rides above
+the hands, and it is a different way of holding a thing from the passport's.
+
+**Idle hands clasped in front after putting the passport away are the
+game's**, seen on a fresh launch before any key of this mod was pressed.
+
+**Not yet checked after the centre-of-mass change:** the bias is backwards
+only now, no longer downwards, which should stop a thrown device standing
+itself upright on its bottom edge. It was reported still standing up once
+before the scale moved off the root; it has not been thrown since.
 
 ### The buttons move
 
