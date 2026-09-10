@@ -126,7 +126,39 @@ tools/    Clone setup, capture supervision, publishing       (PowerShell)
   Editing it while the game is running loses the edit. Check the process first and
   read the file back after writing.
 - Decompiled game source (ilspycmd) is in the session scratchpad; regenerate with
-  `ilspycmd -p -o <dir> -r <Managed> <Managed>\Assembly-CSharp.dll`.
+  `ilspycmd -p -o <dir> -r <Managed> <Managed>\Assembly-CSharp.dll`. It is the
+  only documentation there is for how items, hands and loot actually work, and
+  it has answered every question asked of it.
+- **The capture clone now has PEAKLib in it**, because the item needs it:
+  `plugins/PEAKLib/` holds Core, Items and SoftDependencyFix, `patchers/PEAKLib/`
+  holds the MonoDetour patcher, and `core/` holds MonoDetour itself. That last
+  part is easy to miss — the Thunderstore package for the patcher ships only the
+  patcher, and without `MonoDetour/MonoDetour` beside it every hook fails with a
+  `TypeLoadException` in the preloader and PEAKLib silently does nothing.
+- `BepInEx.cfg` is back at its ordinary log levels. Turning both `LogLevels`
+  lines up to `All` is how the PEAKLib problem below was found, and is worth
+  reaching for whenever a mod appears to load and then does nothing: PEAKLib's
+  own debug lines were the difference between a guess and an answer.
+- **`tools/preview-tracker.ps1` is the loop for anything to do with the device.**
+  It writes the clone's config, launches the game off-screen into a solo run,
+  photographs the model from four sides and then in a character's hands, copies
+  the pictures and the log back into `capture-output/tracker/`, and the game
+  quits itself. About two minutes, unattended. Everything in the section on the
+  physical item below was learned from it.
+- **Steam has to be running and logged in to play the clone.** `steam_appid.txt`
+  stops the exe bouncing the launch to the Steam copy, but Steamworks itself
+  still needs the client: without it `SteamAuthTicketService.VerifyHasValidTicket`
+  throws every frame and the game sits on a blank beige screen forever, with
+  nothing in the BepInEx log to say why — it is in `Player.log` under
+  `LocalLow/LandCrab/PEAK/`. None of the unattended runs meet this, because
+  `AutoRun` takes the game offline before it ever asks Steam for anything. So
+  the first person to simply *play* the clone hits it, and it looks exactly like
+  a mod that hangs on startup.
+- **The game must not already be running when that script starts**: BepInEx
+  rewrites the config from memory on exit and would throw away the settings it
+  had just been given. The script refuses rather than racing.
+- Building while the game is running silently fails to copy the new DLL — the
+  copy target is `ContinueOnError`. Build again after the run.
 
 **`AutoRun` and the minimap are mutually exclusive.** Capture automation
 dismisses the loading screen mid-spawn and borrows the camera; playing under it
@@ -389,7 +421,17 @@ because it is the mod's face.
 - **Multiplayer has still never been tested.** It is the one claim on both
   store pages that nobody has checked: the design is client-side and read-only,
   which is why it should be fine, and the markers for other climbers cannot be
-  tested alone at all.
+  tested alone at all. The item makes this more pressing than it was — an item
+  is a networked object, and two people in a room each holding one is a case
+  that has never existed.
+- **Nobody has heard the mod.** Every measurement on the six clips is right and
+  none of them can say whether a zoom sounds like a machine gun.
+- **A ten-second clip of the device being held and switched on, with sound**, is
+  wanted for the store pages. Everything in it now exists; the missing piece is
+  the recording itself. `ScreenCapture` gives frames and no audio, so this needs
+  a screen recorder or ffmpeg capturing a device — the earlier demo clips were
+  made from a recording and composed frame by frame in PIL, and that path still
+  works.
 
 The manifest is finished. How each field was settled is worth keeping:
 
@@ -439,82 +481,427 @@ was actually made at 173x189, so the push barely moved.
 
 ## The tracker as a physical item
 
-There is a 3D model of the device, finished and verified, waiting to be wired
-up. It lives outside this repository, under
-`Documents\DEVELOPMENT\Codex Playground\3d blender\peak_tracker\runtime\` —
-`peak_tracker.blend`, `.fbx`, `.glb`, `REPORT_V4.md`, and a
-`TrackerModelImporter.cs` to drop in `Assets/Editor` before importing the FBX,
-which builds the MeshCollider and stops the collision mesh from being drawn.
+**It is one. The device is in the game, in a chest, and in a character's
+hands.** What follows is how, and what it cost to find out.
 
-The intended route is FBX to a Unity prefab, prefab to an AssetBundle,
-registered through `PEAKLib.Items`. A `.autoload_peakbundle` extension loads a
-bundle without a plugin of its own, but a working map and buttons need code, so
-that shortcut does not apply here.
+**Unity is not needed anywhere, and was never installed.** The route everyone
+documents — author a prefab in the editor, bake an AssetBundle, register that —
+pins a mod to one exact editor version and breaks quietly when the version
+drifts. It is also not what the library actually requires. `ItemContent(Item)`
+takes a live component on a live GameObject and does not care where it came
+from, so the whole thing is built in code:
+
+```
+plugin/model/peak_tracker.glb     the model, committed, source of truth
+tools/build-tracker-mesh.py       -> plugin/assets/tracker.mesh  (131 KB blob)
+plugin/src/Tracker/TrackerModel.cs    blob -> Mesh at runtime
+plugin/src/Tracker/TrackerObject.cs   Mesh -> a GameObject with materials
+plugin/src/Tracker/TrackerItem.cs     GameObject -> Item + LootData + grips
+plugin/src/Tracker/TrackerRegistration.cs   the only file that mentions PEAKLib
+```
+
+The blob is committed, so a build is still one `dotnet build` with no Python in
+the way. Rebuild it only when the model changes.
+
+### The conversion, and why it is done offline
+
+Two things go wrong between Blender and this engine, and both fail plausibly
+rather than loudly. `tools/build-tracker-mesh.py` does them once, at a terminal,
+and prints what it produced:
+
+- **Handedness.** glTF is right-handed with -Z forward; Unity is left-handed
+  with +Z forward. The mapping is `(x, y, -z)`, which flips handedness in one
+  step and lands the screen's outward normal on Unity's +Z — so the device's own
+  forward is the face you read, and **pressing a button is -Z**. Because that
+  mapping is a reflection, **triangle winding is reversed too**, or every face
+  points into the case. The script checks winding against the normals and says
+  `INSIDE OUT` when they disagree — which is worth trusting, because the first
+  version of that check had the cross product backwards and accused a perfectly
+  good model.
+- **Texture origin.** glTF's V runs down from the top, Unity's runs up. Get it
+  wrong and the palette still maps to real colours, just the wrong ones.
+
+### What the game's shaders actually offer
+
+Read out of a running game rather than guessed, because none of it is written
+down anywhere:
+
+- **`W/Peak_Standard`** is PEAK's own, and `Shader.Find` finds it. Its base
+  texture is **`_BaseTexture`**, not `_BaseMap` or `_MainTex` — the first attempt
+  asked for those, got no error, and the device came out of the game white. It
+  also has **`_BaseTexAmount`**, which starts at zero, so setting the texture
+  alone is not enough. Metal and smoothness are **`_BaseMetallic` and
+  `_BaseSmooth`, single figures for the whole material**: it cannot take a mask.
+- **`Universal Render Pipeline/Lit` and `.../Unlit` are both in this build.**
+  The lit one has `_MetallicGlossMap`, so it can take the mask.
+
+**The case is drawn with PEAK's own shader and the mask is carried unused.**
+Both versions were built side by side and photographed together on the beach.
+The pipeline's shader turned the case olive and the bezel deep blue — the mask
+working exactly as designed, and a smoothness of 0.78 reflecting a tropical sky.
+It looked like a prop from another game. That comparison can be run again by
+flipping `TrackerRun.Compare`.
+
+**The screen is unlit**, and that is a different decision from the case. A
+screen is backlit: drawn with a lit shader it goes dark at dusk, which is
+exactly when somebody wants to know where they are.
+
+### The model, V5
+
+`Documents\DEVELOPMENT\Codex Playground\3d blender\peak_tracker\runtime\` —
+`peak_tracker.blend`, `.fbx`, `.glb`, `REPORT_V5.md`, `TASK_V5.md`.
+
+Six render meshes now, not two: the body, the three button caps and the antenna
+are separate objects so they can be pressed and can sway. 1806 triangles still,
+plus a 12-triangle collider. Buttons travel **0.6 mm**, and in the exported
+coordinates that is +Z — which the converter's flip turns into **-Z in Unity**,
+into the case.
+
+**The palette is a grid of 32x64 blocks, not 32x32.** This cost an iteration and
+is the kind of thing that hides: by a 32x32 grid, 258 triangles straddle a
+boundary, and nobody notices because both halves of a block are the same colour.
+For the mask they would not be. The check that matters works in UV space and
+derives the granularity instead of assuming it — it is in `TASK_V5.md` §7, and
+on V5 it reports zero straddles at 32x64 with 9 of 16 blocks used.
+
+Two textures ship: `tracker_body_palette.png` and `tracker_body_mask.png`, both
+256x128. The palette is sampled **point, with no mipmaps** — it is a grid of flat
+swatches, and smooth filtering would paint a seam along the edge of every face
+while mipmaps would average the whole grid into mud at any distance.
+
+### Registering it as an item
+
+`PEAKModding.PEAKLib.Core` and `.Items` come from **NuGet**, referenced with
+`ExcludeAssets="runtime"` so they are compiled against and never shipped. The
+dependency is **soft**: everything that worked before — map, navigator, markers
+— works with PEAKLib absent, and only the item needs it. Every mention of it
+lives in `TrackerRegistration.cs`, so a missing assembly cannot break anything
+that does not touch that one method.
+
+**Loot needs no patching at all.** `LootData.PopulateLootData` walks the item
+database and reads a `LootData` component off whatever it finds, so declaring a
+`Rarity` and a set of `SpawnPool` flags is the whole of "put it in chests". The
+defaults are `Rare` and `LuggageBeach`, both settings — measured at **6.5% of
+beach luggage**. A map is worth most before the climb; a navigator found in the
+Citadel is a souvenir.
+
+**`Hand_L` and `Hand_R` are made in code, not in Blender.** The game does
+`item.transform.Find("Hand_L")` at the moment somebody picks an item up and
+welds both hands to it with a `FixedJoint` unless `rightHandOnly` is set — so
+**two hands is the default**, and a missing empty is a null dereference rather
+than a warning. They carry no geometry, and the only way to judge them is a
+photograph of a character holding the thing, which is this repository's loop and
+not Blender's. The convention was measured off the game's own items:
+
+```
+MagicBean     Hand_L (-0.0863, 0.000, -0.1060)  euler (270.0, 195.0,   0.0)
+              Hand_R (+0.0943, 0.000, -0.1060)  euler (270.0, 165.0,   0.0)
+ShelfShroom   Hand_L (-0.2930, 0.070, -0.2960)  euler (272.7,   0.0, 195.0)
+              Hand_R (+0.3500, 0.070, -0.2960)  euler (272.7,   0.0, 165.0)
+```
+
+Behind the item on -Z, mirrored on X, turned -90 about X, splayed by 15 either
+way. Reading the whole item database rather than the handful lying on a beach
+confirms it — of nearly two hundred items, the simple ones agree exactly:
+
+```
+Antidote       Hand_L (-0.160, 0.000, 0.014)  euler (270, 195, 0)
+               Hand_R (+0.160, 0.000, 0.014)  euler (270, 165, 0)
+Bandages       euler (270, 210, 0) / (270, 150, 0)
+Beehive        euler (270, 210, 0) / (270, 150, 0)
+Airplane Food  euler (270, 180, 0) / (270, 180, 0)
+```
+
+**X is 270 and Z is 0 on every one of them**; the only thing that varies is the
+splay about Y, which is 180 give or take 0, 15 or 30 degrees depending on how
+wide the thing is. Fruit and rope spools have hand-authored angles that look
+nothing like this, because they are held rather than gripped. `TrackerRun`
+prints this table on every run.
+
+**A held item's +Z points where the character is looking.** `GetItemHoldForward`
+returns `character.data.lookDirection` and the game torques the item until its
+forward matches — so +Z is the face of the item that points *away* from the
+person holding it. The model's +Z is the screen, which meant the first working
+version handed the player a navigator held backwards: reading the back cover
+while the map faced the scenery. The model therefore sits inside the item root
+rotated 180 degrees about Y, so the item's forward is the back of the case.
+
+That also flips what "in front of the device" means for anything aiming a
+camera at it — the screen is on the item's -Z.
+
+**It is a flip about the vertical, not a tilt.** Worth saying plainly, because
+"rotated 180 degrees" reads like the model was leaned over and it was not. The
+angle a held item sits at is the game's to decide and it decides it the same way
+for everything: forward along the look direction, so any face perpendicular to
+that forward is perpendicular to the view, at any pitch. The guidebook faces its
+reader for exactly this reason. All the rotation settles is *which* of the two
+flat faces is the one turned towards them.
+
+Which is not the same as saying a camera behind the character can see it: the
+item hangs at the chest, so from far enough back the character's own body is
+between the camera and the glass, and the only reason it reads at all is that
+PEAK's camera sits almost on the head.
+
+In the automated run the device ends up at the very bottom of the player's view,
+which briefly looked like a finding about whether a held map can be read at all.
+**It is not one.** That run leaves the character half-spawned on purpose, and
+the pose it holds things in is not the pose a played character holds them in —
+in a real session the hands track the view and stay in frame, up or down.
+`hand-looking-25.png` and `hand-looking-45.png` are the game's own camera tilted
+down, and they settle it: the device sits centred and readable, held in both
+hands with the map facing up.
+
+**Two settings exist for tuning this by hand, in a live game.** `Tracker/Scale`
+multiplies the whole device — case, collision and grip points together, so the
+hands keep hold of it — and `Tracker/ReadoutScale` grows the strip of numbers
+and its lettering. Both default to 1, and both are the honest lever for the same
+complaint from opposite ends: one makes the device bigger in the world, the
+other gives the numbers more of a device that is already the right size.
+`tools/preview-tracker.ps1` takes `-Scale` and `-ReadoutScale` so a value can be
+photographed without editing the clone's config between runs.
+
+**What those pictures do raise is the size of the writing.** The screen renders
+at 512 pixels across and lands on a player's display about ninety wide, so
+everything on it shrinks five-fold. The map survives that; the altitude readout
+does not, and comes out as a smear along the bottom of the glass. A real
+handheld solves this by showing less: one big number instead of a line. That is
+a decision about what the device is for, not a bug, and it is the next thing
+worth deciding.
+
+**The grips are judged from a character who has just walked**, not one standing
+perfectly still. Idle brings the arms in towards the body and blends the hand
+IK against whatever the animator is doing, so a photograph of somebody standing
+still shows the pose a player will see least of. `HandShot.Walk` writes
+`movementInput` for a couple of seconds first — written rather than pressed,
+because nobody is at the keyboard, and it lands after the game's own sampling
+fills that field with zero. If a future version samples later this stops
+working, and the logged walking speed says so plainly.
+
+### PEAKLib does not always install its own hooks
+
+**This is the one thing here that is somebody else's bug and still has to be
+lived with.** PEAKLib adds a registered item to the game's database from a hook
+on `ItemDatabase.OnLoaded`. On PEAK v2.4.b with PEAKLib.Items 1.6.2 that hook
+never installs: the module logs nothing at all, not even at Debug, while
+PEAKLib.Core's hooks work fine beside it. The result is the worst of the three
+possible outcomes — the item exists, has a network prefab, and is invisible to
+the game, with every step reporting success.
+
+So `TrackerRegistration.EnsureInDatabase` checks and, if needed, does that work
+by hand. The id is hashed **exactly** the way PEAKLib hashes it, the same two
+strings in the same order, so an item registered either way is the same item
+with the same id. It also clears `LootData.AllSpawnWeightData`, because the
+spawn weights are computed once and cached, and an item added afterwards would
+otherwise be in the database and in no chest.
+
+Diagnosing this needed `LogLevels = All` in `BepInEx.cfg`; a backup of the
+original sits beside it as `BepInEx.cfg.bak`.
+
+### The map on the screen
+
+`MinimapController.OnDevice` switches the map from a drawing in the corner to a
+texture a mesh can wear. The same camera draws the same mountain; what changes
+is that the canvas — markers, player arrow, altitude readout — is rendered by a
+camera of its own into a second texture, and the drawn case, glass and buttons
+are not built at all, because they are the mesh now.
+
+That camera and its canvas are **parked five kilometres under the sea**. A
+screen-space canvas sits directly in front of whichever camera draws it, so
+leaving it near the mountain would hang a full-size copy of the map in the air
+beside the player.
+
+Its culling mask is the canvas's own layer and **not zero**. A screen-space
+canvas is drawn by its camera as part of that camera's ordinary rendering, so it
+is culled by the same mask, and a camera told to see nothing sees least of all
+the canvas it exists to photograph. Clearing the mask to keep the mountain out
+produced a texture containing exactly the background colour while every log line
+said the map had been handed over. Distance keeps the world out instead.
+
+**Where the map goes is decided once, when the item's fate is known.** On the
+device if there is one — a player holding a navigator does not also want a
+second one in the corner, and rendering the mountain twice would be a strange
+way to spend a frame — and in the corner if PEAKLib is absent or registration
+failed, because a map somewhere beats no map. That decision cannot be made in
+`Awake`: PEAKLib loads after this plugin, so it waits until the same moment the
+item is registered.
+
+**That path has not been watched in a real session.** Everything above was
+verified through the preview run, which uses AutoRun — and AutoRun deliberately
+builds no map at all, creating its own in device mode instead. So the branch a
+player actually takes is reasoned and compiled and unphotographed. It is the
+first thing to check when somebody next plays.
+
+### The map has to be carried
+
+Found by playing, within a minute of the first spawn: the device chirped awake
+at the start of the run, answered the zoom keys and showed its map — with no
+navigator anywhere in the inventory, and none ever picked up.
+
+The cause was the shape of the port rather than a slip. The map has always been
+a thing that exists while the run does, and turning it into a device's screen
+changed where it is drawn without changing when it is alive. So the whole
+device was running in the abstract: sounds, keys, markers, all belonging to an
+object the player had never found. **A device that works without being carried
+is not a device, it is a heads-up display wearing one as a costume.**
+
+`MinimapController.Carrying` now gates it — always true for the drawn map in the
+corner, and on a device an actual check that the local character is holding an
+item whose `itemID` matches the registered one. By id rather than name: a clone
+carries "(Clone)" and the mod's prefix. The waking and sleeping chirps land on
+picking it up and putting it away, which is where they belonged all along.
+
+### The game resets an item's scale, so `forceScale` is off
+
+`Item.forceScale` defaults to true, and `Item.SetState` acts on it at every
+change of state: `localScale` back to one when held and when on the ground, and
+to a half in a backpack. So `Tracker/Scale` appeared not to work — the device
+sat oversized in the chest and snapped back to its true ninety millimetres the
+instant anybody picked it up, which reads as two different objects rather than
+as one setting being overwritten.
+
+Setting `forceScale = false` on the item keeps whatever scale it was built with.
+The cost is that it no longer shrinks to half inside a backpack; if that ever
+looks wrong, shrink it there deliberately rather than by turning this back on.
+
+**Blender is not involved.** The model is the size the device really is, and
+that is worth keeping: the setting exists precisely so the *apparent* size can
+be tuned without the file ever becoming a lie about the object.
+
+### What playing it settled, and the one thing it did not
+
+The first session with a person actually holding the device. Everything here
+came from that hour and not from a photograph.
+
+**Settled, do not re-open:**
+
+- **`Tracker/Scale = 3` is the right size.** At its true ninety millimetres the
+  device reads as a toy in PEAK's enormous hands; three times looks like a
+  navigator and the map on it is legible. This only started working once
+  `forceScale` was turned off — before that the setting appeared to do nothing
+  at all, because the game restored the scale the moment anyone picked it up.
+- **`Tracker/ArrowScale = 3` is right too**, and the question is closed. At the
+  drawn map's sixteen pixels the "you are here" arrow vanished into the terrain
+  on a screen seen at a fraction of its render size.
+- **The readout is legible at that size** without touching `ReadoutScale`.
+- **The map is only alive while the device is carried**, confirmed in play.
+
+**Not settled — the grip.** Three passes, none right, and the mistake each time
+was reasoning about it instead of looking:
+
+```
+0.055 across, 0.022 behind   hands met behind the case, holding nothing
+0.042 across, 0.006 behind   hands on the sides but visibly wrenched
+```
+
+The remaining complaint is that the wrists are twisted and **the hands need to
+be further apart — wider than either attempt so far.** The depth looks right at
+0.006; it was the 0.022 that made them meet behind, not the width. So the next
+move is `GripAcross` upwards from 0.055, keeping `GripBehind` where it is, and
+possibly widening `GripSplay` past 15 degrees so the palms turn to face each
+other rather than being forced parallel.
+
+Worth remembering that these are the item's own units and everything scales with
+`Tracker/Scale`, so at three times a change of one centimetre moves a hand three.
+That is why small edits kept overshooting.
+
+**Known and deprioritised:** a thrown device slides on its face instead of
+tumbling. It is a flat slab, so this is partly honest physics, and the
+centre-of-mass bias added to make it land screen-up will be making it worse.
+Removing the vertical part of that bias and keeping only the backward part is
+the thing to try.
+
+### The buttons move
+
+`TrackerDevice` sits on every built device and moves the three caps 0.6 mm into
+the case when their key is pressed — down on the frame the click sounds, up
+gently over about a tenth of a second. A button that eases down as slowly as it
+comes up feels like a sponge.
+
+`MinimapController.Press` is the single place a button goes down, and it now
+reaches three things at once: the drawing, the mesh, and the sound. So the
+corner-of-the-screen map and a device in somebody's hands stay in step without
+either knowing about the other.
+
+**Nobody has seen it happen.** The unattended run presses no keys, and 0.6 mm
+would not read in a photograph taken at arm's length even if it did. The code is
+short and the travel came off the model, but "compiled" is all this has earned
+so far.
+
+### Sounds
+
+Six clips in `plugin/assets/`, embedded like everything else: `power_on`,
+`power_off`, three `click_*` and `zoom_limit`. `Sound/Volume` controls them,
+0 for silence. Wired into the existing map already — `M` wakes and sleeps the
+device, the zoom and tilt keys click, and the end of the zoom ladder knocks.
+
+**Mono, 16-bit PCM, 44.1 kHz, and the mono part is not a preference.** Once the
+device is an object somebody is holding, its sound is positional, and the engine
+mixes a mono clip into stereo from where the object is. A stereo clip cannot be
+placed at all. WAV rather than anything compressed because a WAV becomes an
+`AudioClip` from a byte array in a few lines, where every compressed format
+wants a file on disk and an asynchronous load.
+
+The chunks are **walked**, not assumed at byte 44: an encoder may put LIST or
+fact chunks before the samples, and a reader that seeks to a fixed offset plays
+metadata as noise without throwing.
+
+The brief that produced them is `docs/TASK_SOUNDS.md`, and the generator is kept
+in `docs/sound-source/`. Three clicks rather than one because a zoom is five or
+six presses in a row and a single sample makes that a machine gun; they differ
+by about 5% in pitch, length and decay, which is on the subtle side and has not
+yet been judged by ears in a real climb.
 
 **The game is Unity 6000.3.15f1** — read out of `PEAK_Data/globalgamemanagers`
 on this machine, and the same version the PEAK modding guide names. That
 question is settled; do not re-open it.
 
-### What the model is
+### The screen, and why its shape matters
 
-Verified by reading the GLB rather than taking the export note's word for it:
-
-```
-PEAK_Tracker_ROOT
-  Tracker_Body      1806 tris, material Tracker_Body, texture tracker_body_palette
-  Tracker_Screen    front plane, material Tracker_Screen_Runtime, NO texture
-  Tracker_Collider  12 tris, no material, not drawn
-  Grip              empty where the hand holds it, (0, 0.013580, 0.042822) in Blender
-```
-
-89.63 x 25.48 x 120 mm with the antenna. Scale applied, root at 1,1,1.
-
-**The screen is deliberately bare.** An earlier version had the map baked into
-it as `screen_map.png`, which would have shipped an item permanently showing one
-frame of Shore reading "chest 19 m +4 m". It is its own mesh with its own
-material slot precisely so the plugin can put a `RenderTexture` there.
+**The screen is deliberately bare.** An earlier version of the model had the map
+baked into it as `screen_map.png`, which would have shipped an item permanently
+showing one frame of Shore reading "chest 19 m +4 m". It is its own mesh with its
+own material slot precisely so the plugin can put a texture there.
 
 **Its aspect is 635:600 = 1.058333**, matched to `Navigator.Screen` on purpose.
-Build the `RenderTexture` at that ratio — 512x484 — or the map stretches.
+The render texture is built at that ratio — 512x484 — and the frame that fills it
+is sized width-first. Sizing it the other way round fits a 542-wide frame into a
+512-wide picture and leans every slope on the mountain.
 
-### The three things the code has to do
-
-1. **Point the map camera at a RenderTexture.** `MinimapController` already
-   drives its own orthographic camera; this is `targetTexture` and little else.
-   Cheapest part by far.
-2. **Get the Canvas onto the screen.** The markers, the player arrow and the
-   readout strip are a screen-space Canvas. Rendering the whole Canvas to a
-   second `RenderTexture` and compositing is more likely to work than moving it
-   to World Space: every rectangle in `Navigator.cs` is a fraction of the
-   999x1216 artwork, and none of that arithmetic survives being re-fitted to six
-   centimetres of mesh.
-3. **Retire the drawn case from the UI.** With a physical device, `body.png`,
-   `glass-overlay.png` and the three button faces stop being UI and become the
-   source of the body texture instead. They do not disappear; their job changes.
-
-### Known to check on first import
-
-**Which way the screen faces.** The export note says the screen points at -Z.
-Unity's forward is +Z, so it may well import facing away from the camera. If the
-device arrives with its back to you, that is this and nothing more — rotate the
-prefab 180 degrees. Possibly it is already right; it has never been opened in
-Unity.
-
-**Which way up the map lands.** The screen's UV origin is bottom-left with +V
-up. Unity's `RenderTexture` origin flips between graphics APIs, so an upside
-down map on the first run is a texture flag, not a bug in the mapping.
+The two things this section used to warn about have both been answered by
+running it. The screen does **not** arrive facing away: the converter's
+handedness flip lands it on Unity's +Z, and the only rotation anything needs is
+the deliberate 180 degrees inside the item, so the glass faces its owner. And
+the map is **not** upside down — the converter flips V once, offline, and the
+picture comes out the right way up on the first try.
 
 ## Open threads
 
 - **In-game settings.** Everything is already bound through BepInEx config, so
   **ModConfig** (PEAKModding, ~709K downloads) would render a panel for free.
   Worth confirming it discovers other mods' entries before promising it.
-- **Second version, agreed and deferred:** recolouring the case (either the
-  author draws variants or the orange is hue-shifted in code, leaving the greys
-  alone); the signal and battery gauges across the top of the screen — signal
-  as climbers still on their feet, battery as daylight left, both from
-  `DayNightManager.instance` which has `timeOfDay`, `dayStart`, `dayEnd`;
-  pressed-state artwork for the buttons, two frames each.
+- **The antenna does not sway yet.** It is its own object with its origin at
+  its base, so this is the same shape of work as the buttons —
+  `TrackerDevice.Update` is where it would go.
+- **The second carrier, agreed and not built:** the device appearing in the
+  hand on `M` rather than being found in a chest. The item and the hotkey want
+  the same mesh, the same screen and the same sounds, and differ only in how the
+  thing gets into a hand — so this is a second small class beside
+  `TrackerItem`, not a second implementation.
+- **Recolouring is now nearly free** and does not need the artist. The case is
+  six flat swatches in a 256x128 palette; hue-shifting the orange pair and
+  leaving the greys alone is a handful of lines against a config setting.
+- **Signal and battery gauges** across the top of the screen — signal as
+  climbers still on their feet, battery as daylight left, both from
+  `DayNightManager.instance`, which has `timeOfDay`, `dayStart` and `dayEnd`.
+  These are drawn on the screen, so they are the same work whether the map is in
+  a corner or in a hand.
+- **Pressed-state artwork is no longer wanted.** It was on this list for the
+  drawn version, where a press had to be a second picture. On a mesh the button
+  moves.
+- **Nobody has heard the sounds in a climb.** They are correct by every
+  measurement — mono, 44.1 kHz, peaks at -6 dBFS, clicks 8.7 dB under the
+  chirps — and whether three clicks are different enough to stop a zoom sounding
+  like a machine gun is not a thing measurement can answer.
 - `beetle` still bakes at 19% burnt out. Everything else is under 3%.
 - Location names: the internal biome enum does not match what players call
   places (`Swamp` is the fog and the Citadel; `Roots` is the forest). A mapping
