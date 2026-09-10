@@ -21,9 +21,18 @@
     ours, drawn for this mod, which is why it can ship at all - none of PEAK's
     own art is here, and the marker icons are photographed at runtime for
     exactly that reason.
+
+    tracker.mesh is the device as a 3D model, travelling the same way and for a
+    second reason besides: the documented route for a custom item is an
+    AssetBundle baked in the Unity editor, which pins the mod to one editor
+    version and breaks quietly when that drifts. It is generated from
+    plugin/model/peak_tracker.glb by tools/build-tracker-mesh.py, and committed,
+    so a build stays one `dotnet build` with no Python in the way.
   -->
   <ItemGroup>
     <EmbeddedResource Include="assets\*.png" />
+    <EmbeddedResource Include="assets\tracker.mesh" />
+    <EmbeddedResource Include="assets\*.wav" />
   </ItemGroup>
 
   <ItemGroup>
@@ -32,11 +41,27 @@
   </ItemGroup>
 
   <!--
+    PEAKLib, for registering the device as a real item the game can put in a
+    chest. Compiled against, never shipped: ExcludeAssets="runtime" keeps its
+    assemblies out of the build output, the way the game's own are kept out,
+    because the player installs it as its own Thunderstore package.
+
+    It is a soft dependency on purpose. Everything the mod did before this -
+    the map, the navigator, the markers - works with PEAKLib absent, and only
+    the physical item needs it. A mod that refuses to load without a second mod
+    is a worse mod for the people who only wanted a map.
+  -->
+  <ItemGroup>
+    <PackageReference Include="PEAKModding.PEAKLib.Core" Version="1.7.2" ExcludeAssets="runtime" />
+    <PackageReference Include="PEAKModding.PEAKLib.Items" Version="1.6.2" ExcludeAssets="runtime" />
+  </ItemGroup>
+
+  <!--
     Game + engine assemblies, referenced in place. Private=false keeps them out
     of the build output; BepInEx resolves them at runtime from the game itself.
   -->
   <ItemGroup>
-    <Reference Include="Assembly-CSharp;Assembly-CSharp-firstpass;Newtonsoft.Json;Zorro.Core.Runtime;PhotonUnityNetworking;PhotonRealtime;Unity.Collections;Unity.Mathematics;Unity.Burst;UnityEngine;UnityEngine.CoreModule;UnityEngine.PhysicsModule;UnityEngine.TerrainModule;UnityEngine.ImageConversionModule;UnityEngine.ScreenCaptureModule;UnityEngine.InputLegacyModule;UnityEngine.AudioModule;UnityEngine.UIModule;UnityEngine.UI;Unity.TextMeshPro;UnityEngine.UIElementsModule;Unity.RenderPipelines.Universal.Runtime;Unity.RenderPipelines.Core.Runtime">
+    <Reference Include="Assembly-CSharp;Assembly-CSharp-firstpass;Newtonsoft.Json;Zorro.Core.Runtime;PhotonUnityNetworking;PhotonRealtime;Sirenix.Serialization;Sirenix.OdinInspector.Attributes;Sirenix.Utilities;Unity.Collections;Unity.Mathematics;Unity.Burst;UnityEngine;UnityEngine.CoreModule;UnityEngine.PhysicsModule;UnityEngine.TerrainModule;UnityEngine.ImageConversionModule;UnityEngine.ScreenCaptureModule;UnityEngine.InputLegacyModule;UnityEngine.AudioModule;UnityEngine.UIModule;UnityEngine.UI;Unity.TextMeshPro;UnityEngine.UIElementsModule;Unity.RenderPipelines.Universal.Runtime;Unity.RenderPipelines.Core.Runtime">
       <HintPath>$(PeakManaged)\%(Identity).dll</HintPath>
       <Private>false</Private>
     </Reference>

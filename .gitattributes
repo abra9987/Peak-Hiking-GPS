@@ -7,3 +7,16 @@
 *.jpg       binary
 *.bin       binary
 *.gz        binary
+
+# Named rather than left to auto-detection. `text=auto` guesses from the first
+# few kilobytes, and the one it is most likely to get wrong is the mesh blob:
+# it opens with an eight-byte header and floats, which is exactly the sort of
+# thing a heuristic can read as text and then quietly rewrite the line endings
+# inside.
+*.wav       binary
+*.glb       binary
+*.fbx       binary
+*.blend     binary
+*.mesh      binary
+*.mp4       binary
+*.webp      binary
