@@ -145,6 +145,7 @@ namespace PeakMapInteractive.Tracker
             Item item = device.AddComponent<Item>();
             item.mass = Mass;
             item.defaultPos = HoldPos;
+            LayInLuggage(item);
 
             // The game's own scale handling is left on. It resets the root's
             // scale to one whenever the item changes hands, and to a half in a
@@ -228,6 +229,31 @@ namespace PeakMapInteractive.Tracker
             }
         }
 
+        /// <summary>
+        /// How it lies in a suitcase: on its back, screen up, resting on the
+        /// floor rather than sunk into it.
+        ///
+        /// Luggage places each item at a spawn spot and then applies the
+        /// item's own <c>offsetLuggagePosition</c> and <c>offsetLuggageRotation</c>,
+        /// and keeps it kinematic until somebody disturbs it — so whatever
+        /// attitude it is given here is the attitude it is found in. Left at
+        /// the default it stood on the spot upright and toppled onto whichever
+        /// face chance picked, half the time the glass, and its centre sat on
+        /// the floor with the lower half of the case through it.
+        ///
+        /// The spot already lays an item flat, glass down, with the item's
+        /// height across the suitcase; a half turn about X puts the glass up,
+        /// and a quarter turn about the spot's vertical lays the long side
+        /// along the suitcase, where it fits. The lift is half
+        /// the case's thickness at the built scale, plus a little.
+        /// </summary>
+        private static void LayInLuggage(Item item)
+        {
+            item.offsetLuggageSpawn = true;
+            item.offsetLuggageRotation = new Vector3(180f, 0f, Plugin.Settings.TrackerLuggageTurn.Value);
+            item.offsetLuggagePosition = new Vector3(0f, Plugin.Settings.TrackerLuggageLift.Value, 0f);
+        }
+
         /// <summary>Where the game holds it: right, up and forward of the head.</summary>
         private static Vector3 HoldPos => new Vector3(
             Plugin.Settings.TrackerHoldX.Value, Plugin.Settings.TrackerHoldY.Value, Plugin.Settings.TrackerHoldZ.Value);
@@ -285,6 +311,7 @@ namespace PeakMapInteractive.Tracker
             PlaceGrips(Prefab.transform);
             PlaceModel(Prefab.transform.Find("Model"));
             Prefab.GetComponent<Item>().defaultPos = HoldPos;
+            LayInLuggage(Prefab.GetComponent<Item>());
 
             ushort id = Prefab.GetComponent<Item>().itemID;
             int moved = 0;
@@ -308,6 +335,8 @@ namespace PeakMapInteractive.Tracker
             var s = Plugin.Settings;
             s.TrackerScale.SettingChanged += (_, __) => RefreshGrips();
             s.TrackerTilt.SettingChanged += (_, __) => RefreshGrips();
+            s.TrackerLuggageLift.SettingChanged += (_, __) => RefreshGrips();
+            s.TrackerLuggageTurn.SettingChanged += (_, __) => RefreshGrips();
             s.TrackerHoldX.SettingChanged += (_, __) => RefreshGrips();
             s.TrackerHoldY.SettingChanged += (_, __) => RefreshGrips();
             s.TrackerHoldZ.SettingChanged += (_, __) => RefreshGrips();

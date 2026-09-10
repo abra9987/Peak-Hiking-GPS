@@ -42,6 +42,11 @@ namespace PeakMapInteractive.Tracker
         private readonly float[] _pressedUntil = new float[3];
         private readonly float[] _depth = new float[3];
 
+        private Material _screen;
+        private Item _item;
+        private bool _live;
+        private Texture _shown;
+
         private void Awake()
         {
             for (int i = 0; i < Names.Length; i++)
@@ -50,7 +55,54 @@ namespace PeakMapInteractive.Tracker
                 if (_buttons[i] != null) _rest[i] = _buttons[i].localPosition;
             }
 
+            // A screen of its own. The renderer arrives sharing one material
+            // with every other device, and the map has to go on this one's
+            // screen or not, so it gets a copy.
+            Transform screen = Find(transform, TrackerObject.ScreenPart);
+            var renderer = screen == null ? null : screen.GetComponent<Renderer>();
+            if (renderer != null)
+            {
+                _screen = renderer.material;
+                TrackerObject.SetTexture(_screen, null);
+                TrackerObject.SetColour(_screen, TrackerObject.ScreenOff);
+            }
+
             All.Add(this);
+        }
+
+        /// <summary>
+        /// Whether this is the device in the local character's hands.
+        ///
+        /// Only that one is switched on. Every device draws from the same map,
+        /// and the first version put it on all of them at once, so three
+        /// navigators dropped on the sand all lit up and all zoomed together —
+        /// three screens showing one instrument. A device on the ground is
+        /// off; a device in somebody else's hands is theirs, not this
+        /// player's. With nobody at the keyboard at all — the preview run —
+        /// every screen stays on, since there is nobody to hold one.
+        /// </summary>
+        private bool Held()
+        {
+            Character player = Character.localCharacter;
+            if (player == null || player.data == null) return true;
+
+            if (_item == null) _item = GetComponentInParent<Item>();
+            return _item != null && player.data.currentItem == _item;
+        }
+
+        private void UpdateScreen()
+        {
+            if (_screen == null) return;
+
+            bool live = Held();
+            Texture map = live ? TrackerObject.Map : null;
+
+            if (live == _live && map == _shown) return;
+            _live = live;
+            _shown = map;
+
+            TrackerObject.SetTexture(_screen, map);
+            TrackerObject.SetColour(_screen, map != null ? Color.white : TrackerObject.ScreenOff);
         }
 
         private void OnDestroy() => All.Remove(this);
@@ -110,8 +162,87 @@ namespace PeakMapInteractive.Tracker
             if (item != null) item.centerOfMass = bias;
         }
 
+        private bool _centred;
+
+        /// <summary>
+        /// Slides a device that has just been laid in a suitcase to the middle
+        /// of the case, along its length.
+        ///
+        /// A suitcase places its items on spawn spots — 45 centimetres from
+        /// the middle in the small one — and centres each item's bounds on
+        /// its spot, which is built for things a hand's length across. This
+        /// device is half a metre long at the size it is played at, so on a
+        /// spot it lay with its antenna through the end wall, whichever way
+        /// it was turned. It is moved to the middle of the case, along and
+        /// across; its height above the floor and its rotation are the
+        /// game's and stay as given.
+        ///
+        /// Done once, the first frame the item is found kinematic on the
+        /// ground, which is how a suitcase holds what it has laid out until
+        /// somebody takes it. Nothing else leaves an item in that state.
+        /// </summary>
+        private void CentreInLuggage()
+        {
+            if (_centred) return;
+            if (_item == null) _item = GetComponentInParent<Item>();
+            if (_item == null || _item.rig == null) return;
+            if (_item.itemState != ItemState.Ground || !_item.rig.isKinematic) return;
+
+            _centred = true;
+
+            // The suitcase this device was laid in is the one with a spawn
+            // spot under it. Not the nearest by its root: a suitcase's root
+            // sits at one edge, so the nearest root can belong to the closed
+            // case next door, and the device was carried off into that one —
+            // which showed as a second item in a case that had held one.
+            Luggage nearest = null;
+            Vector3 centre = Vector3.zero;
+            float best = 0.25f;
+            foreach (Luggage luggage in Luggage.ALL_LUGGAGE)
+            {
+                if (luggage == null) continue;
+
+                var lists = new List<List<Transform>>();
+                if (luggage.spawnSpots != null) lists.Add(luggage.spawnSpots);
+                if (luggage.weightedSpawnSpots != null)
+                    foreach (var entry in luggage.weightedSpawnSpots)
+                        if (entry != null && entry.spawnSpots != null) lists.Add(entry.spawnSpots);
+
+                Vector3 sum = Vector3.zero;
+                int count = 0;
+                float closest = float.MaxValue;
+                foreach (var list in lists)
+                    foreach (Transform spot in list)
+                    {
+                        if (spot == null) continue;
+                        sum += luggage.transform.InverseTransformPoint(spot.position);
+                        count++;
+                        Vector3 flat = spot.position - _item.transform.position;
+                        flat.y = 0f;
+                        closest = Mathf.Min(closest, flat.magnitude);
+                    }
+
+                if (count == 0 || closest >= best) continue;
+                best = closest;
+                nearest = luggage;
+                centre = sum / count;
+            }
+            if (nearest == null) return;
+
+            Vector3 local = nearest.transform.InverseTransformPoint(_item.transform.position);
+            local.x = centre.x;
+            local.z = centre.z;
+            Vector3 world = nearest.transform.TransformPoint(local);
+
+            _item.transform.position = world;
+            _item.rig.position = world;
+        }
+
         private void Update()
         {
+            UpdateScreen();
+            CentreInLuggage();
+
             for (int i = 0; i < _buttons.Length; i++)
             {
                 if (_buttons[i] == null) continue;
@@ -132,11 +263,8 @@ namespace PeakMapInteractive.Tracker
         }
 
         /// <summary>
-        /// Presses one button on every device there is.
-        ///
-        /// Every device shows the same map from the same camera, so they press
-        /// together too. There is normally one; the preview run stands two side
-        /// by side, and a shared run could have one in each of four hands.
+        /// Presses one button on the device that is switched on — the one in
+        /// the local player's hands, or every one in the preview run.
         /// </summary>
         internal static void PressAll(int index)
         {
@@ -144,7 +272,7 @@ namespace PeakMapInteractive.Tracker
 
             foreach (TrackerDevice device in All)
             {
-                if (device == null) continue;
+                if (device == null || !device._live) continue;
 
                 device._pressedUntil[index] = Time.unscaledTime + Hold;
             }

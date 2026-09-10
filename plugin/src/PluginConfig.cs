@@ -62,10 +62,13 @@ namespace PeakMapInteractive
         public readonly ConfigEntry<float> TrackerScale;
         public readonly ConfigEntry<float> TrackerReadoutScale;
         public readonly ConfigEntry<float> TrackerArrowScale;
+        public readonly ConfigEntry<float> TrackerMarkerScale;
         public readonly ConfigEntry<float> TrackerHoldX;
         public readonly ConfigEntry<float> TrackerHoldY;
         public readonly ConfigEntry<float> TrackerHoldZ;
         public readonly ConfigEntry<float> TrackerTilt;
+        public readonly ConfigEntry<float> TrackerLuggageLift;
+        public readonly ConfigEntry<float> TrackerLuggageTurn;
         public readonly ConfigEntry<float> TrackerOffsetUp;
         public readonly ConfigEntry<float> TrackerOffsetAway;
         public readonly ConfigEntry<float> TrackerGripAcross;
@@ -332,7 +335,7 @@ namespace PeakMapInteractive
                 "souvenir.");
 
             TrackerScale = cfg.Bind(
-                "Tracker", "Scale", 3.5f,
+                "Tracker", "Scale", 4f,
                 new ConfigDescription(
                     "How large the navigator is, as a multiple of its real size. It is drawn at " +
                     "90 by 120 millimetres, which is what a handheld unit measures and is also " +
@@ -342,7 +345,7 @@ namespace PeakMapInteractive
                     "together, so the hands keep hold of it. Held in the game it reads as far " +
                     "smaller than its measurements suggest, because PEAK's characters have " +
                     "enormous hands and every prop is drawn to match them rather than to " +
-                    "scale. Three and a half was settled by holding it.",
+                    "scale. Four was settled by holding it.",
                     new AcceptableValueRange<float>(0.5f, 6f)));
 
             TrackerReadoutScale = cfg.Bind(
@@ -391,6 +394,21 @@ namespace PeakMapInteractive
                     "Where the device is held, in front of the head, in metres. Zero is " +
                     "inside the head, which is what an item gets when nobody says otherwise.",
                     new AcceptableValueRange<float>(0f, 1.5f)));
+
+            TrackerLuggageLift = cfg.Bind(
+                "Tracker", "LuggageLift", 0.12f,
+                new ConfigDescription(
+                    "How far above a suitcase's spawn point the device is laid, in metres, " +
+                    "so it rests on the floor of the case rather than through it. The " +
+                    "spawn point is a little above the floor and the device is thick.",
+                    new AcceptableValueRange<float>(-0.2f, 0.4f)));
+
+            TrackerLuggageTurn = cfg.Bind(
+                "Tracker", "LuggageTurn", 180f,
+                new ConfigDescription(
+                    "How the device is turned about the vertical when laid in a suitcase, " +
+                    "in degrees. 180 lays it across the case with the antenna towards the lid, away from whoever opened it.",
+                    new AcceptableValueRange<float>(-180f, 180f)));
 
             TrackerTilt = cfg.Bind(
                 "Tracker", "TiltDegrees", 10f,
@@ -484,6 +502,15 @@ namespace PeakMapInteractive
                     "of the wrist. Zero for the passport and the bottles, 45 for the compass. " +
                     "The right hand takes the opposite angle.",
                     new AcceptableValueRange<float>(0f, 360f)));
+
+            TrackerMarkerScale = cfg.Bind(
+                "Tracker", "MarkerScale", 2f,
+                new ConfigDescription(
+                    "How large the chest and creature markers are on the device's screen, as " +
+                    "a multiple of Minimap/MarkerSizePixels. The same reason as ArrowScale: " +
+                    "the markers were sized for a map in a corner at full resolution, and on " +
+                    "a screen seen at a fraction of that the round plates shrank to dots.",
+                    new AcceptableValueRange<float>(1f, 5f)));
 
             TrackerPreview = cfg.Bind(
                 "Tracker", "PreviewModel", false,

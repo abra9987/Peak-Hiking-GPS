@@ -775,7 +775,7 @@ those hours and not from a photograph.
 
 **Settled, do not re-open:**
 
-- **`Tracker/Scale = 3.5` is the right size**, held at the settled distance.
+- **`Tracker/Scale = 4` is the right size**, held at the settled distance.
 - **`Tracker/ArrowScale = 3` is right too**, and the question is closed. At the
   drawn map's sixteen pixels the "you are here" arrow vanished into the terrain
   on a screen seen at a fraction of its render size.
@@ -813,7 +813,8 @@ still in the head.
 The settled numbers, all defaults now and all in `[Tracker]`:
 
 ```
-Scale 3.5    HoldX 0  HoldY -0.25  HoldZ 0.85    TiltDegrees 10
+Scale 4      HoldX 0  HoldY -0.25  HoldZ 0.85    TiltDegrees 10
+LuggageTurn 180   LuggageLift 0.12   MarkerScale 2
 GripAcross 0.05  GripBehind -0.033  GripHeight -0.012
 GripAngleX 270   GripAngleY 202     GripAngleZ 0      (the passport's)
 ```
@@ -875,14 +876,43 @@ fixed it, and the first two were tried alone and did nothing visible:
   froze mid-topple, a few degrees off vertical, and the hull and the weight
   never got their say. With sleep off it falls over at once.
 
-Seen in a beach suitcase afterwards: it lies on its back, screen up.
+**In a suitcase it is placed, not dropped.** Luggage keeps what it lays
+out kinematic until somebody takes it, so the attitude it is given is the
+attitude it is found in, and no physics applies. The game's own hooks do
+it: `Item.offsetLuggageSpawn` with `offsetLuggageRotation` (180, 0, turn)
+and `offsetLuggagePosition` (0, lift, 0), both settings — `LuggageTurn`
+180 lays it across the case with the antenna towards the lid, away from
+whoever opened it, and `LuggageLift` 0.12 keeps it on the floor rather
+than through it. Then `TrackerDevice.CentreInLuggage` slides it to the
+middle of the spawn spots, because the spots are 45 cm from the middle in
+the small case and built for things a hand's length across; on one of
+them the device lay with its antenna through the wall.
 
-A self-righting nudge was tried in between — a torque whenever it lay still
-in the wrong attitude — and rejected on sight: it rose onto its edge and
-sank onto its back like a stage trick. Physics that is only shaped, never
-pushed, is what reads as honest.
+Two mistakes in that, worth not repeating. The dark panel on the back of
+the model is a battery cover: a dark rectangle in an orange frame seen
+from above is the *back*, not a switched-off screen, and the first three
+screenshots were read wrong for that reason. And "the nearest suitcase" by
+root distance is the wrong suitcase often enough to matter — a suitcase's
+root sits at one edge — so the device was carried into the closed case
+next door and showed up there as a second item beside a glider. It is
+chosen by the spawn spot under the device now.
 
-### The buttons move
+**The zoom is kept between glances.** It used to snap back to
+`StartZoomStep` every time the map opened; in play that threw away a
+scale chosen on purpose every time the device went into a pocket.
+
+**Only the held device is on.** Every device drew the same map and pressed
+the same buttons, so three on the sand all zoomed together. Each has its
+own screen material now; it shows the map only while it is the local
+character's current item, and is dark otherwise. In the preview run, with
+no character, every screen stays on. In multiplayer this means another
+climber's navigator is seen dark — their map is theirs.
+
+**`Tracker/Scale` is 4.** 3.5 was settled first, then 4 was tried at the
+same distance and preferred for the map's legibility, and it is the default. `Tracker/MarkerScale` doubles the
+marker plates on the device only, and the readout is bold.
+
+A self-righting nudge was tried in between### The buttons move
 
 `TrackerDevice` sits on every built device and moves the three caps 0.6 mm into
 the case when their key is pressed — down on the frame the click sounds, up

@@ -624,6 +624,9 @@ namespace PeakMapInteractive.Minimap
             // problem at ninety in a hand.
             text.fontSizeMax = Mathf.Max(9f, deviceSize * (OnDevice ? 0.115f : 0.05f) * readout);
             text.alignment = TextAlignmentOptions.Center;
+            // Bold, because at ninety pixels across a regular weight thins to
+            // a smear and a heavy one still reads as letters.
+            text.fontStyle = FontStyles.Bold;
             text.color = new Color(0.94f, 0.94f, 0.92f);
             text.raycastTarget = false;
             text.enableWordWrapping = false;
@@ -950,12 +953,13 @@ namespace PeakMapInteractive.Minimap
 
         private void Show(bool shown)
         {
-            // Opening always starts from the configured rung. Coming back to a
-            // zoom left over from the last time it was open is disorienting:
-            // the map is glanced at mid-climb, and a glance has no time to work
-            // out what scale it is looking at.
-            if (shown && !_shown) _zoom = StartZoom();
-
+            // The zoom is kept between glances. It used to snap back to the
+            // configured rung every time the map opened, on the theory that a
+            // glance mid-climb has no time to work out what scale it is
+            // looking at — and in play it was the opposite: a scale chosen on
+            // purpose was thrown away every time the device was put in a
+            // pocket, and had to be dialled in again. The configured rung is
+            // where the first look of a run starts, and nothing more.
             _shown = shown;
             if (_camera != null) _camera.enabled = shown;
             if (_canvas != null) _canvas.enabled = shown;
@@ -1110,6 +1114,7 @@ namespace PeakMapInteractive.Minimap
 
             Character self = Character.localCharacter;
             float baseSize = Plugin.Settings.MinimapMarkerSize.Value;
+            if (OnDevice) baseSize *= Mathf.Clamp(Plugin.Settings.TrackerMarkerScale.Value, 1f, 5f);
             bool wantIcons = Plugin.Settings.MinimapIcons.Value;
             Vector2 panel = _panel.rect.size;
             int used = 0;

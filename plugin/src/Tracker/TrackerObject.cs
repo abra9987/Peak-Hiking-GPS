@@ -89,43 +89,38 @@ namespace PeakMapInteractive.Tracker
         }
 
         /// <summary>
-        /// A collision shape with only one way to lie still: on its back.
+        /// A collision shape that will not stand on an edge.
         ///
         /// The case's own box stood on its bottom edge when dropped upright,
-        /// the way a book stands on a shelf, and lay on its glass as happily
-        /// as on its back. Weighting it could not fix that — a few centimetres
-        /// of centre-of-mass bias decide which way a thing topples only if it
-        /// topples at all. So the hull is shaped instead, in the model's own
-        /// frame where +Z is the screen:
+        /// the way a book stands on a shelf. Here the back face is inset on
+        /// every side, so every side face leans: upright, the lowest line is
+        /// the front-bottom edge, the centre of mass sits behind it, and it
+        /// falls over backwards — and cannot lean back onto the sloping
+        /// bottom either, because that face is too short to catch it. The
+        /// same on its head or on either side.
         ///
-        /// - The back face is inset on every side, so every side face leans.
-        ///   Upright, the lowest line is the front-bottom edge, and the centre
-        ///   of mass sits behind it: it falls over backwards, and cannot lean
-        ///   back onto the sloping bottom either, because that face is too
-        ///   short to catch it. The same on its head or on either side.
-        /// - The front carries a low ridge, set off centre, so it cannot lie
-        ///   on its glass: it rocks off the ridge onto a side edge, and the
-        ///   side edge tips it onto its back.
+        /// It can still lie on its glass. Every attempt to shape that away —
+        /// a ridge down the front, an off-centre one, a narrowed front — only
+        /// produced a different flat pose to settle into, because a slab
+        /// resting on a face has its weight inside that face whatever the
+        /// face is. So a thrown device lands as a thrown thing lands; a
+        /// device in a suitcase is placed on its back by
+        /// <c>TrackerItem.LayInLuggage</c>, which is where it is found.
         ///
-        /// None of it is visible. The ridge stands a few millimetres proud of
-        /// the glass and the inset is hidden inside the case; nothing here
-        /// changes how it is picked up or held.
+        /// None of this is visible: the inset is hidden inside the case, and
+        /// nothing here changes how it is picked up or held.
         /// </summary>
         private static Mesh RestlessHull(Bounds b)
         {
             Vector3 lo = b.min, hi = b.max;
-            float w = hi.x - lo.x, h = hi.y - lo.y, d = hi.z - lo.z;
+            float w = hi.x - lo.x, h = hi.y - lo.y;
             float inset = 0.12f * Mathf.Min(w, h);
-            float ridge = 0.25f * d;
-            float ridgeX = lo.x + 0.62f * w;
 
             var vertices = new[]
             {
                 // The front, full size, at the glass.
                 new Vector3(lo.x, lo.y, hi.z), new Vector3(hi.x, lo.y, hi.z),
                 new Vector3(hi.x, hi.y, hi.z), new Vector3(lo.x, hi.y, hi.z),
-                // The ridge down the front, off centre.
-                new Vector3(ridgeX, lo.y, hi.z + ridge), new Vector3(ridgeX, hi.y, hi.z + ridge),
                 // The back, drawn in on every side.
                 new Vector3(lo.x + inset, lo.y + inset, lo.z), new Vector3(hi.x - inset, lo.y + inset, lo.z),
                 new Vector3(hi.x - inset, hi.y - inset, lo.z), new Vector3(lo.x + inset, hi.y - inset, lo.z)
@@ -136,12 +131,11 @@ namespace PeakMapInteractive.Tracker
             var triangles = new[]
             {
                 0, 1, 2,  0, 2, 3,          // front
-                0, 4, 1,  3, 2, 5,          // ridge
-                6, 8, 7,  6, 9, 8,          // back
-                0, 3, 9,  0, 9, 6,          // left
-                1, 7, 8,  1, 8, 2,          // right
-                0, 6, 7,  0, 7, 1,          // bottom
-                3, 2, 8,  3, 8, 9           // top
+                4, 6, 5,  4, 7, 6,          // back
+                0, 3, 7,  0, 7, 4,          // left
+                1, 5, 6,  1, 6, 2,          // right
+                0, 4, 5,  0, 5, 1,          // bottom
+                3, 2, 6,  3, 6, 7           // top
             };
 
             var mesh = new Mesh { name = "Tracker_Collider_Restless" };
@@ -274,7 +268,7 @@ namespace PeakMapInteractive.Tracker
             var material = new Material(unlit) { name = "HikingGPS_Screen" };
 
             // Off, until there is a map to put on it.
-            SetColour(material, new Color(0.035f, 0.055f, 0.065f, 1f));
+            SetColour(material, ScreenOff);
             SetFloat(material, "_Metallic", 0f);
             SetFloat(material, "_BaseMetallic", 0f);
             SetFloat(material, "_Smoothness", 0f);
@@ -327,6 +321,12 @@ namespace PeakMapInteractive.Tracker
         }
 
         private static Texture _map;
+
+        /// <summary>The live map, or null before there is one.</summary>
+        internal static Texture Map => _map;
+
+        /// <summary>What a screen looks like switched off.</summary>
+        internal static readonly Color ScreenOff = new Color(0.035f, 0.055f, 0.065f, 1f);
 
         // --- shaders ---------------------------------------------------------
 
@@ -486,7 +486,7 @@ namespace PeakMapInteractive.Tracker
         /// The name it wants is <c>_BaseTexture</c>, and it also has a dial for
         /// how much of that texture to use, which starts at none.
         /// </summary>
-        private static void SetTexture(Material material, Texture texture)
+        internal static void SetTexture(Material material, Texture texture)
         {
             bool set = false;
 
@@ -509,7 +509,7 @@ namespace PeakMapInteractive.Tracker
             SetFloat(material, "_BaseTexAmount", 1f);
         }
 
-        private static void SetColour(Material material, Color colour)
+        internal static void SetColour(Material material, Color colour)
         {
             bool set = false;
 
