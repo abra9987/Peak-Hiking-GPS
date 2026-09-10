@@ -875,6 +875,8 @@ fixed it, and the first two were tried alone and did nothing visible:
   froze mid-topple, a few degrees off vertical, and the hull and the weight
   never got their say. With sleep off it falls over at once.
 
+Seen in a beach suitcase afterwards: it lies on its back, screen up.
+
 A self-righting nudge was tried in between — a torque whenever it lay still
 in the wrong attitude — and rejected on sight: it rose onto its edge and
 sank onto its back like a stage trick. Physics that is only shaped, never
