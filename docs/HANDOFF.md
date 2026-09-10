@@ -32,7 +32,7 @@ tools/    Clone setup, capture supervision, publishing       (PowerShell)
 - **`pwsh` is not installed here.** The packaging script's own examples say
   `pwsh tools/package.ps1`; on this machine it is `& '.\tools\package.ps1'` in
   Windows PowerShell 5.1, which runs it fine.
-- **GitHub:** remote `origin` is `https://github.com/abra9987/hiking-gps`.
+- **GitHub:** remote `origin` is `https://github.com/abra9987/Peak-Hiking-GPS`.
   `gh` is not installed, but Git Credential Manager holds a token for
   `abra9987` with `gist, repo, workflow`, so `git push` works and the REST API
   can be driven with `git credential fill` for anything `gh` would have done.
@@ -306,7 +306,7 @@ because it is the mod's face.
 
 The manifest is finished. How each field was settled is worth keeping:
 
-- **`website_url` is `https://github.com/abra9987/hiking-gps`**, and the
+- **`website_url` is `https://github.com/abra9987/Peak-Hiking-GPS`**, and the
   repository behind it is public and pushed. Publishing it forced two things
   that had been quietly wrong. The root `LICENSE` was plain MIT while
   `plugin/assets` sits in the repository, so publishing as it stood would have
