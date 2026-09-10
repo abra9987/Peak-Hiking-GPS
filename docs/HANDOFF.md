@@ -4,6 +4,92 @@ Written so the next session starts from what was learned rather than
 rediscovering it. Updated at the end of the session that built the navigator
 and got the mod ready to publish.
 
+## It is published
+
+Both stores are live. This is no longer a thing being prepared.
+
+- **Thunderstore:** <https://thunderstore.io/c/peak/p/abra9987/Hiking_GPS/> —
+  team `abra9987`, chosen because a team name is permanent and an author is a
+  safer thing to be stuck with than a product. Versions cannot be deleted once
+  up, which is why 1.0.0 and 1.0.1 are still there with faults in them.
+- **Nexus:** <https://www.nexusmods.com/peak/mods/228> — mod 228.
+- **Source:** <https://github.com/abra9987/Peak-Hiking-GPS>, public.
+
+Three releases followed the first, each because publishing showed something
+reading the files had not:
+
+- **1.0.1** — `F11` (screenshot) and `F10` (bake every icon) were bound by
+  default. Both are development tools; F11 had even been written into the
+  controls table as a feature. Both are `KeyCode.None` now. `CaptureHotkey` had
+  been unbound for this reason already; these two were missed.
+- **1.0.2** — the readme claimed mods disable Steam achievements. **They do
+  not.** PEAK checks `RunSettings.blockingAchievements`, which returns nothing
+  but whether you started one of the game's own custom runs, and the assemblies
+  contain no reference to BepInEx, Doorstop or any mod detection at all. This
+  mod never touches achievements, run settings or Steam.
+- **1.0.3** — the Thunderstore icon was lines of small text, unreadable at the
+  size a list actually shows it. It is the device on plain grey now.
+
+**The version used to be declared twice** — `<Version>` in the project file,
+which the packaging script reads, and a literal in `Plugin.cs`, which is what
+the assembly announces. They agreed only by hand, and diverged the moment the
+project file moved: a zip labelled 1.0.1 shipped a plugin calling itself 1.0.0.
+`Plugin.cs` now takes `MyPluginInfo.PLUGIN_VERSION`, generated from that same
+`<Version>`.
+
+**Commits no longer carry Claude attribution.** `~/.claude/settings.json` has
+`attribution: {commit: "", pr: "", sessionUrl: false}`. The whole history was
+rewritten to strip the old trailers, and note why the repository was recreated
+rather than renamed: GitHub's contributor graph is computed separately from the
+commit history and does not clear when the history does — a stale entry had
+survived months in another repository.
+
+### What the store forms actually do
+
+Written down because none of it is guessable and all of it cost a retry:
+
+- **Nexus's description editor is WYSIWYG.** Its last toolbar button, `View
+  source`, is BBCode. Setting that textarea's value programmatically does not
+  stick — it is React-backed and ignores a value it did not see typed.
+- **Nexus draws its own breadcrumb, title and stats over the lower left of the
+  header banner.** A banner with its own title there gives two titles on top of
+  each other. `docs/media/header.png` keeps its text right and high, and leaves
+  the lower left empty on purpose.
+- **Nexus takes .jpg, .png and .gif only, 8 MB each**, and videos only as an
+  external link. So `demo.webp` and `demo.mp4` cannot go on the page at all;
+  the GIF can at 540x304, 96 colours, every second frame — 6.5 MB.
+- **PEAK has two categories on Nexus:** Miscellaneous and Mod.
+- **An uploaded file's version field defaults to `1`**, and the checkbox under
+  it pushes that onto the mod, quietly undoing a version set earlier.
+- **The BepInEx requirement defaults to the x86 build.** PEAK is 64-bit.
+- **Thunderstore's team and category dropdowns drop a selection made too
+  quickly** — the list has to be open before the click lands. Click one at a
+  time and check.
+- **The Nexus archive ships one file**, `BepInEx/plugins/HikingGPS/HikingGPS.dll`.
+  It extracts over the game folder, so a readme or licence at its root landed
+  loose in the player's PEAK directory. Thunderstore keeps manifest, icon and
+  readme because that platform requires them and the readme is the page.
+
+### Media that exists now
+
+In `docs/media/`, committed, unlike `dist/media/`:
+
+- `header.png` 1300x372 — the Nexus banner.
+- `thumbnail.png` 1920x1080 — the Nexus cover: device large, one big title.
+- `icon.png` in `packaging/` 256x256 — the Thunderstore icon, device on grey.
+- `device.png` — **the device alone on transparency, composited from
+  `plugin/assets` at the artwork's own 999x1216**: body, glass overlay and the
+  three button faces, with a map screen lifted from a capture taken at
+  `SizePixels 820`. Nothing of the game's interface is in it. This is the file
+  to reach for whenever the device is wanted as an object rather than a
+  screenshot.
+- `shot-shore.jpg`, `shot-chest.jpg` — in-game screenshots.
+
+**The button faces are drawn at 1.28 of their recess, not the 1.14** the comment
+in `MinimapController` and the prose here both claim: `Grow` adds the fraction
+on each side. The look is right and shipped; the numbers in the prose are what
+is wrong.
+
 ## What this is now
 
 It began as a web map of PEAK's daily mountain and ended as an **in-game
@@ -265,7 +351,7 @@ the goal without it.
 
 ## Releasing it
 
-The mod is **Hiking GPS 1.0.0** — plugin id `com.abra9987.hikinggps`, assembly
+The mod is **Hiking GPS**, now at 1.0.3 — plugin id `com.abra9987.hikinggps`, assembly
 `HikingGPS.dll`. The rename had never actually been run: the config file the new
 id writes did not exist and the last log still said "Peak Map Interactive -
 Capture", so between the rename and now nothing had loaded the renamed assembly
@@ -300,9 +386,10 @@ because it is the mod's face.
 
 ### Still needed from a person
 
-- **A Thunderstore team.** Its name is permanent — it cannot be renamed or
-  deleted once a package is published. This is the last thing standing between
-  the archives in `dist/` and a published mod.
+- **Multiplayer has still never been tested.** It is the one claim on both
+  store pages that nobody has checked: the design is client-side and read-only,
+  which is why it should be fine, and the markers for other climbers cannot be
+  tested alone at all.
 
 The manifest is finished. How each field was settled is worth keeping:
 
@@ -326,9 +413,6 @@ The manifest is finished. How each field was settled is worth keeping:
   was pulled and searched: nothing contains `hiking`, nothing contains `gps`,
   and no owner contains `abra`. Package names are scoped per team anyway, so
   this is about not colliding in search rather than about being blocked.
-- **Multiplayer has never been tested.** The design is client-side and
-  read-only, which is why it should be fine, and "should" is not "is". The
-  markers for other climbers cannot be tested alone at all.
 
 ### Media
 
