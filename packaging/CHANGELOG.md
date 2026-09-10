@@ -1,5 +1,20 @@
 # Changelog
 
+## 1.0.3
+
+- New icon: the GPS itself, large, on a plain grey field. The old one carried
+  lines of small text that were unreadable at the size an icon is actually
+  shown at.
+
+Text and artwork only. The mod is unchanged from 1.0.1.
+
+## 1.0.2
+
+- The readme said mods disable Steam achievements. They keep working; the note
+  is corrected.
+
+Text only. The mod itself is unchanged from 1.0.1.
+
 ## 1.0.1
 
 - **Unbound the two development hotkeys.** `F11` saved a screenshot and `F10`

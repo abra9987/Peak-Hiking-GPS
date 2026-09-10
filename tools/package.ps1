@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     Builds the mod and packs it into a zip a player can install.
 
@@ -100,10 +100,10 @@ New-Package -Name 'thunderstore' -PluginPath 'plugins' -Extras @(
 )
 
 # Nexus and anyone installing by hand extract over the game folder instead, so
-# the archive has to carry the path the file actually belongs at.
-New-Package -Name 'nexus' -PluginPath 'BepInEx\plugins\HikingGPS' -Extras @(
-    'packaging\LICENSE',
-    'packaging\README.md'
-)
+# the archive has to carry the path the file actually belongs at -- and nothing
+# else. A readme or a licence at the root of this one would not go to a page or
+# a folder of its own: it would land loose in the player's PEAK directory, next
+# to the game's own files, with no way to tell what dropped it there.
+New-Package -Name 'nexus' -PluginPath 'BepInEx\plugins\HikingGPS' -Extras @()
 
 Write-Host "Both archives are in $OutputDirectory" -ForegroundColor Cyan

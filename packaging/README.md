@@ -73,7 +73,7 @@ the game over and can quit for you. It is off by default.
 
 ## Notes
 
-- Mods generally disable Steam achievements. This one is no exception.
+- Steam achievements keep working.
 - If PEAK crashes on startup with BepInEx installed, launching with `-dx12` is
   the usual fix.
 - Please do not report bugs to Aggro Crab or Landfall while running mods.
