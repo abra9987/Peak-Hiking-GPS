@@ -424,8 +424,6 @@ because it is the mod's face.
   tested alone at all. The item makes this more pressing than it was — an item
   is a networked object, and two people in a room each holding one is a case
   that has never existed.
-- **Nobody has heard the mod.** Every measurement on the six clips is right and
-  none of them can say whether a zoom sounds like a machine gun.
 - **A ten-second clip of the device being held and switched on, with sound**, is
   wanted for the store pages. Everything in it now exists; the missing piece is
   the recording itself. `ScreenCapture` gives frames and no audio, so this needs
@@ -725,11 +723,11 @@ failed, because a map somewhere beats no map. That decision cannot be made in
 `Awake`: PEAKLib loads after this plugin, so it waits until the same moment the
 item is registered.
 
-**That path has not been watched in a real session.** Everything above was
+**That path has been watched in a real session and works.** It was first
 verified through the preview run, which uses AutoRun — and AutoRun deliberately
-builds no map at all, creating its own in device mode instead. So the branch a
-player actually takes is reasoned and compiled and unphotographed. It is the
-first thing to check when somebody next plays.
+builds no map at all, creating its own in device mode instead — and then
+confirmed by playing: the map appears on the device found in a chest, not in
+the corner. Nothing here is left to check.
 
 ### The map has to be carried
 
@@ -784,6 +782,10 @@ came from that hour and not from a photograph.
   on a screen seen at a fraction of its render size.
 - **The readout is legible at that size** without touching `ReadoutScale`.
 - **The map is only alive while the device is carried**, confirmed in play.
+- **The map lands on the device's screen, not in the corner**, when the item
+  is registered — the real branch, with PEAKLib and without AutoRun.
+- **The buttons are seen to move and the sounds are heard.** Chirps on pick-up
+  and put-away, clicks on zoom and tilt, the knock at the end of the ladder.
 
 **Not settled — the grip.** Three passes, none right, and the mistake each time
 was reasoning about it instead of looking:
@@ -822,10 +824,10 @@ reaches three things at once: the drawing, the mesh, and the sound. So the
 corner-of-the-screen map and a device in somebody's hands stay in step without
 either knowing about the other.
 
-**Nobody has seen it happen.** The unattended run presses no keys, and 0.6 mm
-would not read in a photograph taken at arm's length even if it did. The code is
-short and the travel came off the model, but "compiled" is all this has earned
-so far.
+**Seen in play.** The unattended run presses no keys, and 0.6 mm would not read
+in a photograph taken at arm's length even if it did, so this was only ever
+going to be confirmed by a person — and it was: the caps visibly go down on
+the click and come back up.
 
 ### Sounds
 
@@ -848,8 +850,8 @@ metadata as noise without throwing.
 The brief that produced them is `docs/TASK_SOUNDS.md`, and the generator is kept
 in `docs/sound-source/`. Three clicks rather than one because a zoom is five or
 six presses in a row and a single sample makes that a machine gun; they differ
-by about 5% in pitch, length and decay, which is on the subtle side and has not
-yet been judged by ears in a real climb.
+by about 5% in pitch, length and decay. Heard in a real climb now: the chirps
+and clicks sound right, and a zoom does not sound like a machine gun.
 
 **The game is Unity 6000.3.15f1** — read out of `PEAK_Data/globalgamemanagers`
 on this machine, and the same version the PEAK modding guide names. That
@@ -898,10 +900,6 @@ picture comes out the right way up on the first try.
 - **Pressed-state artwork is no longer wanted.** It was on this list for the
   drawn version, where a press had to be a second picture. On a mesh the button
   moves.
-- **Nobody has heard the sounds in a climb.** They are correct by every
-  measurement — mono, 44.1 kHz, peaks at -6 dBFS, clicks 8.7 dB under the
-  chirps — and whether three clicks are different enough to stop a zoom sounding
-  like a machine gun is not a thing measurement can answer.
 - `beetle` still bakes at 19% burnt out. Everything else is under 3%.
 - Location names: the internal biome enum does not match what players call
   places (`Swamp` is the fog and the Citadel; `Roots` is the forest). A mapping
