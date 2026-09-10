@@ -1,4 +1,4 @@
-﻿using System.IO;
+using System.IO;
 using BepInEx;
 using BepInEx.Configuration;
 using BepInEx.Logging;
@@ -93,7 +93,15 @@ namespace PeakMapInteractive
                     "not a working character.");
             }
 
-            if (Settings.MinimapEnabled.Value && !Settings.AutoRun.Value)
+            // The map is built later when the device might exist.
+            //
+            // Where it goes depends on whether the navigator turns out to be a
+            // real item — on its screen if it is, in the corner of the screen if
+            // it is not — and that is not knowable this early: PEAKLib loads
+            // after this plugin does. So the decision waits until the moment the
+            // item is either registered or found to be impossible, which is a
+            // few frames later and before anything is drawn.
+            if (Settings.MinimapEnabled.Value && !Settings.AutoRun.Value && !Settings.TrackerAsItem.Value)
             {
                 gameObject.AddComponent<Minimap.MinimapController>();
                 Logger.LogInfo($"Minimap enabled (toggle: {Settings.MinimapToggleKey.Value}).");
@@ -129,6 +137,8 @@ namespace PeakMapInteractive
             if (Settings.ExportMeshes.Value && !Pipeline.CaptureRunner.HasCompleted)
                 Capture.MeshPrimer.Tick();
 
+            TryRegisterItem();
+
             if (Input.GetKeyDown(Settings.ScreenshotKey.Value)) Snapshot();
 
             if (Input.GetKeyDown(Settings.CaptureHotkey.Value))
@@ -141,9 +151,18 @@ namespace PeakMapInteractive
             if (!Settings.AutoRun.Value) return;
             if (!IsMapReady()) return;
 
-            // Two things worth doing unattended once a run has loaded, and only
-            // ever one of them: a full capture of the mountain, or a sweep of
-            // every marker icon on it.
+            // Three things worth doing unattended once a run has loaded, and
+            // only ever one of them: a full capture of the mountain, a sweep of
+            // every marker icon on it, or a look at the device itself.
+            if (Settings.TrackerPreview.Value)
+            {
+                if (Automation.TrackerRun.HasCompleted) return;
+
+                Logger.LogInfo("AutoRun: map is ready, photographing the device.");
+                Run(Automation.TrackerRun.Run());
+                return;
+            }
+
             if (Settings.MinimapAutoBakeIcons.Value)
             {
                 if (Automation.IconRun.HasCompleted) return;
@@ -157,6 +176,109 @@ namespace PeakMapInteractive
 
             Logger.LogInfo("AutoRun: map is ready, starting capture.");
             Run(Pipeline.CaptureRunner.Run());
+        }
+
+        /// <summary>The plugin id of PEAKLib's items module, read off its own assembly.</summary>
+        private const string PeakLibItems = "com.github.PEAKModding.PEAKLib.Items";
+
+        /// <summary>
+        /// Whether the library the physical item needs is installed.
+        ///
+        /// Asked of BepInEx rather than by touching anything of PEAKLib's, so
+        /// that the answer can be "no" without the question itself failing.
+        /// </summary>
+        internal static bool HasPeakLib
+            => BepInEx.Bootstrap.Chainloader.PluginInfos.ContainsKey(PeakLibItems);
+
+        private bool _itemTried;
+        private bool _itemInDatabase;
+
+        /// <summary>
+        /// Registers the navigator as a real item, once, as soon as it can be.
+        ///
+        /// Not in Awake. The device is built with a material, the material
+        /// wants one of the game's own shaders, and at the moment a BepInEx
+        /// plugin wakes up the game has barely started loading its own content
+        /// — Shader.Find would come back empty and the device would be drawn in
+        /// magenta for the rest of the session. Waiting for the shader to exist
+        /// is waiting for the game to be ready, stated as a thing that can be
+        /// checked rather than as a delay somebody tuned.
+        ///
+        /// Late is safe: PEAKLib adds an item to the database whenever it is
+        /// handed one, whether or not the database has already loaded.
+        /// </summary>
+        private void TryRegisterItem()
+        {
+            if (!Settings.TrackerAsItem.Value) return;
+
+            // Checked every frame until it is true, because the item database
+            // may load long after the item is registered — and because the hook
+            // that would normally do this belongs to a library that can fail to
+            // install without saying so. Two dictionary lookups a frame is a
+            // cheap price for not silently shipping an item nobody can find.
+            if (_itemTried && !_itemInDatabase && HasPeakLib)
+            {
+                try { _itemInDatabase = Tracker.TrackerRegistration.EnsureInDatabase(); }
+                catch (System.Exception error)
+                {
+                    _itemInDatabase = true;   // do not try again every frame forever
+                    Logger.LogError($"The navigator could not be added to the item database: {error}");
+                }
+            }
+
+            if (_itemTried) return;
+            if (Shader.Find("W/Peak_Standard") == null) return;
+
+            _itemTried = true;
+
+            if (!HasPeakLib)
+            {
+                Logger.LogInfo(
+                    "PEAKLib is not installed, so the navigator stays a map in the corner " +
+                    "rather than an item you can pick up. Nothing else is affected.");
+
+                BuildMap(onDevice: false);
+                return;
+            }
+
+            bool registered = false;
+
+            try
+            {
+                registered = Tracker.TrackerRegistration.Register();
+                if (!registered) Logger.LogWarning("The navigator could not be registered as an item.");
+            }
+            catch (System.Exception error)
+            {
+                Logger.LogError($"The navigator could not be registered as an item: {error}");
+            }
+
+            BuildMap(onDevice: registered);
+        }
+
+        /// <summary>
+        /// Builds the map, once it is known where it is going to be shown.
+        ///
+        /// On the device when there is a device: a player holding a navigator
+        /// does not also want a second one floating in the corner of the screen,
+        /// and rendering the mountain twice to give them one would be a strange
+        /// way to spend a frame. In the corner when the item could not be made,
+        /// because a map somewhere is much better than no map at all.
+        /// </summary>
+        private void BuildMap(bool onDevice)
+        {
+            if (!Settings.MinimapEnabled.Value || Settings.AutoRun.Value) return;
+            if (gameObject.GetComponent<Minimap.MinimapController>() != null) return;
+
+            Minimap.MinimapController.OnDevice = onDevice;
+            gameObject.AddComponent<Minimap.MinimapController>();
+
+            if (onDevice) Tracker.TrackerObject.ShowMap(Minimap.MinimapController.DeviceScreen);
+
+            Logger.LogInfo(
+                onDevice
+                    ? "The map is on the navigator's screen; find one in the luggage on the beach."
+                    : $"Minimap enabled (toggle: {Settings.MinimapToggleKey.Value}).");
         }
 
         /// <summary>

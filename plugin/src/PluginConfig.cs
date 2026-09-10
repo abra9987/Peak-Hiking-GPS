@@ -54,6 +54,15 @@ namespace PeakMapInteractive
         public readonly ConfigEntry<float> MinimapStartDelay;
         public readonly ConfigEntry<int> MinimapIconResolution;
 
+        public readonly ConfigEntry<bool> TrackerPreview;
+        public readonly ConfigEntry<float> SoundVolume;
+        public readonly ConfigEntry<bool> TrackerAsItem;
+        public readonly ConfigEntry<Rarity> TrackerRarity;
+        public readonly ConfigEntry<SpawnPool> TrackerSpawnPools;
+        public readonly ConfigEntry<float> TrackerScale;
+        public readonly ConfigEntry<float> TrackerReadoutScale;
+        public readonly ConfigEntry<float> TrackerArrowScale;
+
         public PluginConfig(ConfigFile cfg)
         {
             CaptureHotkey = cfg.Bind(
@@ -258,6 +267,74 @@ namespace PeakMapInteractive
                 "Write every baked marker icon to an 'icons' folder in the output directory, " +
                 "as a PNG. The only way to judge whether an icon reads as what it is without " +
                 "squinting at it twenty pixels across in the corner of the screen.");
+
+            SoundVolume = cfg.Bind(
+                "Sound", "Volume", 0.7f,
+                "How loud the device is: the chirp as it wakes, the click of its buttons, and " +
+                "the dull knock when the zoom will go no further. Set to 0 for a silent map. " +
+                "The clicks are deliberately quieter than the chirps, because a climb involves " +
+                "a great many more of them.");
+
+            TrackerAsItem = cfg.Bind(
+                "Tracker", "AsItem", true,
+                "Put the navigator in the world as a real item: found in luggage, carried in " +
+                "both hands, droppable and shareable. Needs PEAKLib installed; with it absent " +
+                "this does nothing and the map still works from the corner of the screen, " +
+                "which is why the dependency is a soft one.");
+
+            TrackerRarity = cfg.Bind(
+                "Tracker", "Rarity", Rarity.Rare,
+                "How often the navigator turns up in the luggage it can appear in. The game's " +
+                "own scale, from Common to RidiculouslyRare. Rare by default: a map should be " +
+                "a find rather than a fixture, and a party only needs one.");
+
+            TrackerSpawnPools = cfg.Bind(
+                "Tracker", "SpawnPools", SpawnPool.LuggageBeach,
+                "Which luggage it can be found in, from the game's own list — several can be " +
+                "combined with commas. The beach by default, because a map is worth most " +
+                "before the climb rather than after it: a navigator found in the Citadel is a " +
+                "souvenir.");
+
+            TrackerScale = cfg.Bind(
+                "Tracker", "Scale", 1f,
+                new ConfigDescription(
+                    "How large the navigator is, as a multiple of its real size. It is drawn at " +
+                    "90 by 120 millimetres, which is what a handheld unit measures and is also " +
+                    "small in a pair of hands — a map on it is legible, a line of numbers under " +
+                    "the map less so. Raising this trades the honest scale for a screen you can " +
+                    "read at a glance. The case, its collision and the grip points all scale " +
+                    "together, so the hands keep hold of it. Held in the game it reads as far " +
+                    "smaller than its measurements suggest, because PEAK's characters have " +
+                    "enormous hands and every prop is drawn to match them rather than to " +
+                    "scale. Three is a sensible place to start.",
+                    new AcceptableValueRange<float>(0.5f, 6f)));
+
+            TrackerReadoutScale = cfg.Bind(
+                "Tracker", "ReadoutScale", 1f,
+                new ConfigDescription(
+                    "How large the line of numbers under the map is, as a multiple. The strip " +
+                    "and the lettering in it grow together, and both take the space from the " +
+                    "map. Separate from Scale because they are different trades: one makes the " +
+                    "whole device bigger in the world, this one gives the numbers more of a " +
+                    "device that is already the size it should be.",
+                    new AcceptableValueRange<float>(0.5f, 3f)));
+
+            TrackerArrowScale = cfg.Bind(
+                "Tracker", "ArrowScale", 3f,
+                new ConfigDescription(
+                    "How large the arrow showing where you are is on the device's screen, as a " +
+                    "multiple. It was drawn for a map pinned to a corner of the screen at full " +
+                    "resolution; on a device the same picture arrives much smaller, and the one " +
+                    "marker anybody looks for first vanished into the terrain.",
+                    new AcceptableValueRange<float>(1f, 8f)));
+
+            TrackerPreview = cfg.Bind(
+                "Tracker", "PreviewModel", false,
+                "With AutoRun on, stand the 3D device in front of the camera, photograph it " +
+                "from four sides into a 'tracker' folder, and quit. Replaces the other " +
+                "automated work for that run. For building the device: every way the model " +
+                "can arrive wrong — inside out, wrongly coloured, facing backwards — is " +
+                "invisible in the code and obvious in a photograph.");
 
             WriteDiagnostics = cfg.Bind(
                 "Debug", "WriteDiagnostics", false,

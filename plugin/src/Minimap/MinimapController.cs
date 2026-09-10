@@ -1,4 +1,4 @@
-﻿using System.Collections.Generic;
+using System.Collections.Generic;
 using System.Linq;
 using TMPro;
 using UnityEngine;
@@ -107,6 +107,40 @@ namespace PeakMapInteractive.Minimap
         /// </summary>
         internal static bool ForceVisible;
 
+        /// <summary>
+        /// Whether the map is the screen of a physical device rather than a
+        /// drawing in the corner of the screen.
+        ///
+        /// The difference is smaller than it sounds. Both draw the same map
+        /// from the same camera, and both put the same markers and the same
+        /// readout on top of it. What changes is where that picture ends up:
+        /// pinned to a corner over the game, or rendered into a texture that a
+        /// mesh in somebody's hands is wearing. Set before the controller is
+        /// built, because it decides what gets built.
+        /// </summary>
+        internal static bool OnDevice;
+
+        /// <summary>
+        /// How wide the device's screen is rendered, in pixels.
+        ///
+        /// Its height follows from the screen's own proportions, so this is the
+        /// only number. Larger than it strictly needs to be at arm's length,
+        /// because the map is meant to be brought up to the face and read.
+        /// </summary>
+        private const int ScreenPixels = 512;
+
+        private Camera _screenCamera;
+        private RenderTexture _screen;
+
+        private static MinimapController _instance;
+
+        /// <summary>
+        /// The finished picture for the device's screen: the mountain, the
+        /// markers on it, and the readout — one texture, ready to be worn by a
+        /// material. Null until a controller has been built in device mode.
+        /// </summary>
+        internal static Texture DeviceScreen => _instance == null ? null : _instance._screen;
+
         /// <summary>When the mountain finished loading, and whether the run has begun.</summary>
         private float _levelSince = -1f;
         private bool _stoodUp;
@@ -182,6 +216,73 @@ namespace PeakMapInteractive.Minimap
         }
 
         /// <summary>
+        /// A camera that exists only to photograph this canvas.
+        ///
+        /// The map itself is already a render texture, but the markers, the
+        /// player's arrow and the altitude are a canvas drawn on top of it —
+        /// and a mesh cannot wear a canvas. So the canvas is given a camera of
+        /// its own and rendered into a second texture, which is the one the
+        /// device's screen actually shows.
+        ///
+        /// The pair is parked five kilometres under the sea. A screen-space
+        /// canvas sits directly in front of whichever camera draws it, so
+        /// putting that camera anywhere near the mountain would hang a
+        /// full-size copy of the map in the air beside the player. Distance is
+        /// cheaper than a spare layer and cannot be taken away by a game update
+        /// renaming things.
+        /// </summary>
+        private void BuildScreenCamera()
+        {
+            var holder = new GameObject("PeakMapInteractive_ScreenCamera");
+            holder.transform.SetParent(transform, worldPositionStays: false);
+            holder.transform.position = new Vector3(0f, -5000f, 0f);
+
+            int height = Mathf.RoundToInt(ScreenPixels / Navigator.ScreenAspect);
+
+            _screenCamera = holder.AddComponent<Camera>();
+            _screenCamera.orthographic = true;
+            _screenCamera.orthographicSize = height * 0.5f;
+            _screenCamera.clearFlags = CameraClearFlags.SolidColor;
+
+            // Black rather than transparent. The screen is a screen: what the
+            // map does not cover is unlit glass, not a hole through the case.
+            _screenCamera.backgroundColor = new Color(0.02f, 0.03f, 0.035f, 1f);
+            // The canvas's own layer, and only that.
+            //
+            // Not zero. A screen-space canvas is drawn by its camera as part of
+            // that camera's ordinary rendering, so it is culled by the same
+            // mask — and a camera told to see nothing sees the canvas it exists
+            // to photograph least of all. The first version cleared the mask to
+            // keep the mountain out and produced a texture containing exactly
+            // the background colour, while every log line said the map had been
+            // handed over.
+            //
+            // Keeping the world out is the parking spot's job instead: five
+            // kilometres down, there is nothing on this layer to see.
+            _screenCamera.cullingMask = 1 << holder.layer;
+            _screenCamera.nearClipPlane = 0.1f;
+            _screenCamera.farClipPlane = 100f;
+            _screenCamera.allowHDR = false;
+            _screenCamera.allowMSAA = false;
+            _screenCamera.depth = -60f;
+
+            _screen = new RenderTexture(ScreenPixels, height, 16, RenderTextureFormat.ARGB32)
+            {
+                name = "PeakMapInteractive_DeviceScreen",
+                useMipMap = false,
+                autoGenerateMips = false
+            };
+            _screen.Create();
+            _screenCamera.targetTexture = _screen;
+
+            _canvas.renderMode = RenderMode.ScreenSpaceCamera;
+            _canvas.worldCamera = _screenCamera;
+            _canvas.planeDistance = 1f;
+
+            _instance = this;
+        }
+
+        /// <summary>
         /// Ground and structures only. Weather and effects would hang between
         /// the camera and the terrain, and a map you cannot see the ground
         /// through is not a map.
@@ -204,11 +305,20 @@ namespace PeakMapInteractive.Minimap
             canvasObject.transform.SetParent(transform, worldPositionStays: false);
 
             _canvas = canvasObject.AddComponent<Canvas>();
-            _canvas.renderMode = RenderMode.ScreenSpaceOverlay;
-            _canvas.sortingOrder = 500;   // above the game's HUD
-            canvasObject.AddComponent<CanvasScaler>();
 
-            float size = Plugin.Settings.MinimapSize.Value;
+            if (OnDevice) BuildScreenCamera();
+            else
+            {
+                _canvas.renderMode = RenderMode.ScreenSpaceOverlay;
+                _canvas.sortingOrder = 500;   // above the game's HUD
+                canvasObject.AddComponent<CanvasScaler>();
+            }
+
+            // On the device the drawing is gone: the case is a mesh, and this
+            // canvas is only what shows through its glass. So it is sized to
+            // the screen texture, and the screen fills all of it rather than
+            // occupying the rectangle the artwork left for it.
+            float size = OnDevice ? ScreenPixels : Plugin.Settings.MinimapSize.Value;
 
             // The device is one drawing on a square canvas, and everything on
             // it — screen, buttons — is placed as a fraction of that square. So
@@ -218,8 +328,22 @@ namespace PeakMapInteractive.Minimap
             deviceObject.transform.SetParent(canvasObject.transform, worldPositionStays: false);
 
             _frame = deviceObject.AddComponent<RectTransform>();
-            _frame.sizeDelta = new Vector2(size * Navigator.Aspect, size);
-            PinToCorner(_frame);
+
+            if (OnDevice)
+            {
+                // Width first: the screen texture is ScreenPixels across, and
+                // its height follows from the shape of the glass. Sizing it the
+                // other way round fits a 542-wide frame into a 512-wide picture
+                // and leans every slope on the mountain.
+                _frame.sizeDelta = new Vector2(size, size / Navigator.ScreenAspect);
+                _frame.anchorMin = _frame.anchorMax = _frame.pivot = new Vector2(0.5f, 0.5f);
+                _frame.anchoredPosition = Vector2.zero;
+            }
+            else
+            {
+                _frame.sizeDelta = new Vector2(size * Navigator.Aspect, size);
+                PinToCorner(_frame);
+            }
 
             // The screen is added first so that the case and the glass drawn
             // after it land on top: UI draws in the order things were added.
@@ -227,7 +351,7 @@ namespace PeakMapInteractive.Minimap
             screenObject.transform.SetParent(deviceObject.transform, worldPositionStays: false);
 
             _panel = screenObject.AddComponent<RectTransform>();
-            Fill(_panel, Navigator.ScreenArea);
+            Fill(_panel, OnDevice ? Rect.MinMaxRect(0f, 0f, 1f, 1f) : Navigator.ScreenArea);
 
             var map = screenObject.AddComponent<RawImage>();
             map.texture = _target;
@@ -246,6 +370,18 @@ namespace PeakMapInteractive.Minimap
 
             _playerMarker = CreateArrow(markerObject.transform);
             _readout = CreateReadout(screenObject.transform, size);
+
+            // The drawn case, and the buttons drawn on it, belong to the
+            // corner-of-the-screen version only. On the device they are the
+            // mesh, and drawing them here as well would put a picture of a
+            // navigator on the screen of a navigator.
+            if (OnDevice)
+            {
+                if (!Navigator.Available)
+                    Plugin.Logger.LogWarning("Minimap: the navigator artwork did not load; the map is on its own.");
+
+                return;
+            }
 
             Cover(deviceObject.transform, "Glass", Navigator.Glass);
             Cover(deviceObject.transform, "Body", Navigator.Body);
@@ -400,11 +536,24 @@ namespace PeakMapInteractive.Minimap
         /// finish, and a face still moving after the scale has changed twice
         /// reads as lag rather than as feedback.
         /// </summary>
-        private void Press(int index)
+        /// <summary>
+        /// A button going down: it sinks, and it makes a noise.
+        ///
+        /// <paramref name="moved"/> is whether anything happened as a result.
+        /// The button still travels when the zoom is already at the end of its
+        /// ladder — a real one would — but pressing it there gets a dull knock
+        /// instead of a click, which is how a person finds out they have run
+        /// out of zoom without a message telling them so.
+        /// </summary>
+        private void Press(int index, bool moved = true)
         {
             if (index < 0 || index >= _buttons.Length) return;
 
             _pressedUntil[index] = Time.unscaledTime + 0.09f;
+            Tracker.TrackerDevice.PressAll(index);
+
+            if (moved) Tracker.Sounds.Click();
+            else Tracker.Sounds.ZoomLimit();
         }
 
         private void UpdateButtons()
@@ -437,7 +586,14 @@ namespace PeakMapInteractive.Minimap
 
             var strip = stripObject.AddComponent<RectTransform>();
             strip.anchorMin = new Vector2(0f, 0f);
-            strip.anchorMax = new Vector2(1f, 0.155f);
+            // Taller on a device than on a drawing. The screen renders at 512
+            // pixels and reaches a player's display about ninety across, so
+            // everything on it shrinks fivefold: the map survives that and a
+            // line of small lettering does not.
+            float readout = Mathf.Clamp(Plugin.Settings.TrackerReadoutScale.Value, 0.5f, 3f);
+            float band = Mathf.Min(0.45f, 0.155f * (OnDevice ? 1.6f : 1f) * readout);
+
+            strip.anchorMax = new Vector2(1f, band);
             strip.offsetMin = Vector2.zero;
             strip.offsetMax = Vector2.zero;
 
@@ -462,7 +618,11 @@ namespace PeakMapInteractive.Minimap
             // screen and printed across the case.
             text.enableAutoSizing = true;
             text.fontSizeMin = 6f;
-            text.fontSizeMax = Mathf.Max(9f, deviceSize * 0.05f);
+            // Let the autosizing actually fill the strip. At the drawing's
+            // 0.05 the lettering stopped well short of the band it sits in,
+            // which was invisible at 320 pixels in a corner and is the whole
+            // problem at ninety in a hand.
+            text.fontSizeMax = Mathf.Max(9f, deviceSize * (OnDevice ? 0.115f : 0.05f) * readout);
             text.alignment = TextAlignmentOptions.Center;
             text.color = new Color(0.94f, 0.94f, 0.92f);
             text.raycastTarget = false;
@@ -490,7 +650,15 @@ namespace PeakMapInteractive.Minimap
         /// </summary>
         private static RectTransform CreateArrow(Transform parent)
         {
-            RectTransform rect = CreateDot(parent, "You", PlayerColour(), 16f);
+            // Sixteen pixels was sized for a map pinned to a corner of the
+            // screen at its own resolution. On a device the same texture is
+            // seen at a fraction of that, and the one marker a person looks for
+            // first - where am I - disappeared into the terrain.
+            float size = 16f * (OnDevice
+                ? Mathf.Clamp(Plugin.Settings.TrackerArrowScale.Value, 1f, 8f)
+                : 1f);
+
+            RectTransform rect = CreateDot(parent, "You", PlayerColour(), size);
             rect.GetComponent<Image>().sprite = ArrowSprite();
             return rect;
         }
@@ -651,20 +819,33 @@ namespace PeakMapInteractive.Minimap
         {
             if (Input.GetKeyDown(Plugin.Settings.MinimapToggleKey.Value)) _wanted = !_wanted;
 
-            bool ready = _wanted && (ForceVisible || IsInPlay());
-            if (ready != _shown) Show(ready);
+            bool ready = _wanted && (ForceVisible || (IsInPlay() && Carrying()));
+
+            if (ready != _shown)
+            {
+                Show(ready);
+
+                // Here rather than inside Show, which is also called once during
+                // construction to start the map hidden — and a device that
+                // switches itself off as the game loads would be a puzzle.
+                if (ready) Tracker.Sounds.PowerOn();
+                else Tracker.Sounds.PowerOff();
+            }
+
             if (!ready) return;
 
             if (Input.GetKeyDown(Plugin.Settings.MinimapZoomInKey.Value))
             {
+                int before = _zoom;
                 _zoom = Mathf.Max(_zoom - 1, 0);
-                Press(2);
+                Press(2, moved: _zoom != before);
             }
 
             if (Input.GetKeyDown(Plugin.Settings.MinimapZoomOutKey.Value))
             {
+                int before = _zoom;
                 _zoom = Mathf.Min(_zoom + 1, Spans.Length - 1);
-                Press(0);
+                Press(0, moved: _zoom != before);
             }
 
             if (Input.GetKeyDown(Plugin.Settings.MinimapAngleKey.Value))
@@ -680,6 +861,35 @@ namespace PeakMapInteractive.Minimap
             UpdateMarkers();
             UpdateButtons();
             UpdateReadout();
+        }
+
+        /// <summary>
+        /// Whether the player is actually holding the navigator.
+        ///
+        /// Always true when the map is a drawing in the corner of the screen —
+        /// there is nothing to hold. On a device it is the whole question, and
+        /// the first version did not ask it: the map came up at spawn, chirped
+        /// as it woke, and answered the zoom keys, all of it belonging to a
+        /// navigator the player had never found. A device that works without
+        /// being carried is not a device, it is a heads-up display wearing one
+        /// as a costume.
+        /// </summary>
+        private bool Carrying()
+        {
+            if (!OnDevice) return true;
+
+            if (!Tracker.TrackerItem.Registered) return false;
+
+            Character player = Character.localCharacter;
+            Item held = player == null || player.data == null ? null : player.data.currentItem;
+
+            if (held == null) return false;
+
+            // By id rather than by name: a clone's name carries "(Clone)" and
+            // the mod prefix, and the id is what the game itself identifies an
+            // item by.
+            Item pattern = Tracker.TrackerItem.Prefab.GetComponent<Item>();
+            return pattern != null && held.itemID == pattern.itemID;
         }
 
         /// <summary>
@@ -1261,6 +1471,17 @@ namespace PeakMapInteractive.Minimap
         private void OnDestroy()
         {
             if (_camera != null) _camera.targetTexture = null;
+
+            if (_screenCamera != null) _screenCamera.targetTexture = null;
+
+            if (_screen != null)
+            {
+                _screen.Release();
+                Destroy(_screen);
+                _screen = null;
+            }
+
+            if (_instance == this) _instance = null;
 
             if (_target != null)
             {
