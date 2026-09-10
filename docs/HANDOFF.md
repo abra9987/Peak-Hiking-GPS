@@ -29,6 +29,9 @@ tools/    Clone setup, capture supervision, publishing       (PowerShell)
 - Build and deploy in one step: `dotnet build plugin/PeakMapInteractive.csproj -c Release`.
 - Config: `A:\PeakMapCapture\PEAK\BepInEx\config\com.abra9987.hikinggps.cfg`.
   The old `dev.peakmapinteractive.capture.cfg` beside it is dead; the mod was renamed.
+- **`pwsh` is not installed here.** The packaging script's own examples say
+  `pwsh tools/package.ps1`; on this machine it is `& '.\tools\package.ps1'` in
+  Windows PowerShell 5.1, which runs it fine.
 - **BepInEx rewrites that file when the game exits**, from what it holds in memory.
   Editing it while the game is running loses the edit. Check the process first and
   read the file back after writing.
@@ -187,9 +190,22 @@ Three things that only showed up once it was in the game:
 Position, size and the player arrow's colour are settings. Dragging with the
 mouse is deliberately not offered: during a run the cursor belongs to the game.
 
-**Not yet tested in game:** `Minimap/Corner`, `MarginXPixels`, `MarginYPixels`
-and `PlayerMarkerColour` were added after the last play session. They compile
-and the logic is simple, but nobody has seen them work.
+**All four placement settings have now been seen working.** `Minimap/Corner`,
+`MarginXPixels`, `MarginYPixels` and `PlayerMarkerColour` were each driven to a
+non-default value and photographed, one unattended icon run per corner. The
+arrow took `#33C6FF`, the margins moved the case by the pixel count asked for,
+and every corner put the device where it says.
+
+What that turned up, which no amount of reading the code would have:
+
+**The bottom two corners collide with PEAK's own HUD.** Measured on a 1600x900
+screen at the default 320 px size: the stamina bar occupies `y 820..842,
+x 61..555`, and the item slots `y 795..880, x 1237..1510`. At the default
+14 px margin the case lands on both. Raising `MarginYPixels` to 95 bottom-left
+and 115 bottom-right lifts it clear, confirmed by another run each. Both top
+corners are clear as they stand, which is why `TopRight` is the default and
+should stay it. This is now said in the `Corner` and `MarginYPixels` config
+descriptions and in `packaging/README.md`, so a player meets it where they are.
 
 ## Things worth not rediscovering
 
@@ -246,7 +262,12 @@ the goal without it.
 ## Releasing it
 
 The mod is **Hiking GPS 1.0.0** — plugin id `com.abra9987.hikinggps`, assembly
-`HikingGPS.dll`. Thunderstore is the target, not Nexus: PEAK's community has
+`HikingGPS.dll`. The rename had never actually been run: the config file the new
+id writes did not exist and the last log still said "Peak Map Interactive -
+Capture", so between the rename and now nothing had loaded the renamed assembly
+even once. It does load — `Loading [Hiking GPS 1.0.0]`, clean, no errors — but
+that was luck rather than checking, and a rename is exactly the kind of change
+that compiles perfectly and then fails to be found at runtime. Thunderstore is the target, not Nexus: PEAK's community has
 around 1119 packages there against 72 on Nexus, and all three mod managers
 (r2modman, Thunderstore Mod Manager, Gale) pull from it. There is no Steam
 Workshop for PEAK, deliberately. Nexus is worth doing as a second channel
@@ -275,13 +296,28 @@ because it is the mod's face.
 
 ### Still needed from a person
 
-- **`website_url` in `packaging/manifest.json`** is empty. Point it at the repo.
-- **The BepInEx dependency string** — copy it exactly off the BepInExPack PEAK
-  page on Thunderstore into `manifest.json`. Do not guess it; the manifest is
-  brittle. Without it a mod manager will not install BepInEx alongside.
-- **Check "Hiking GPS" is free** on Thunderstore.
+- **`website_url` in `packaging/manifest.json`** is still empty, and it is the
+  only thing left in the manifest. It cannot be filled from here: the working
+  copy has **no git remote at all**, the GitHub account `abra9987` holds one
+  unrelated repository (`Dictor`), and `gh` is not installed on this machine.
+  A URL invented ahead of the repository would ship a 404 to every player, which
+  is worse than an empty field, so it was left empty. Create the repository,
+  then paste the URL in and re-run the packaging script.
 - **A Thunderstore team.** Its name is permanent — it cannot be renamed or
   deleted once a package is published.
+
+Two of the four are now done, and how they were settled is worth keeping:
+
+- **The BepInEx dependency string is `BepInEx-BepInExPack_PEAK-5.4.75301`**,
+  taken off the package page, confirmed against
+  `api/experimental/package/BepInEx/BepInExPack_PEAK/` and against the full v1
+  package dump. It is in `manifest.json`. Note the pack's version is not
+  BepInEx's own: the clone runs BepInEx 5.4.23.5 under a pack numbered 5.4.75301,
+  and that is expected rather than a mismatch to go fixing.
+- **"Hiking GPS" is free.** The whole PEAK package list (8 MB, 1266 packages)
+  was pulled and searched: nothing contains `hiking`, nothing contains `gps`,
+  and no owner contains `abra`. Package names are scoped per team anyway, so
+  this is about not colliding in search rather than about being blocked.
 - **Multiplayer has never been tested.** The design is client-side and
   read-only, which is why it should be fine, and "should" is not "is". The
   markers for other climbers cannot be tested alone at all.

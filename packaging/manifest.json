@@ -3,5 +3,7 @@
   "version_number": "1.0.0",
   "website_url": "",
   "description": "A live minimap for PEAK on a handheld GPS. Real terrain, markers for chests, campfires, statues and animals. Client side.",
-  "dependencies": []
+  "dependencies": [
+    "BepInEx-BepInExPack_PEAK-5.4.75301"
+  ]
 }

@@ -53,10 +53,19 @@ launch. The ones worth knowing:
 | Setting | |
 |---|---|
 | `Minimap / SizePixels` | How tall the GPS is drawn. 360 is about a third of a 1080p screen |
+| `Minimap / Corner` | Which corner it hangs in. `TopRight`, `TopLeft`, `BottomRight`, `BottomLeft` |
+| `Minimap / MarginXPixels`, `MarginYPixels` | How far in from the edges |
+| `Minimap / PlayerMarkerColour` | The colour of the arrow that is you, as `#RRGGBB` |
 | `Minimap / StartZoomStep` | Which zoom step it opens on, counting the tightest as 1 |
 | `Minimap / MarkerSizePixels` | How large the markers are |
 | `Minimap / Icons` | Turn the photographed icons off and go back to plain markers |
 | `Minimap / StartDelaySeconds` | How long after the mountain loads before the map opens |
+
+Both top corners are clear of PEAK's own HUD. The bottom two are not: at the
+default margin the GPS covers the stamina bar on the left and the item slots on
+the right. If you want it down there, raise `MarginYPixels` to around 95 in the
+bottom-left corner and 115 in the bottom-right, and the HUD comes back out from
+under it.
 
 Leave everything under `Automation` alone. It exists to develop the mod: it
 takes the game over, drives it into a solo run by itself and can quit for you.

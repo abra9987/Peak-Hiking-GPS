@@ -147,7 +147,10 @@ namespace PeakMapInteractive
                 "Minimap", "Corner", ScreenCorner.TopRight,
                 "Which corner of the screen the GPS hangs in. Dragging it with the mouse is " +
                 "not offered on purpose: during a run the cursor belongs to the game, and " +
-                "prising it away to move a window is a worse trade than picking a corner once.");
+                "prising it away to move a window is a worse trade than picking a corner once. " +
+                "Both top corners are clear of PEAK's own HUD. The bottom two are not — at the " +
+                "default margin the GPS sits on the stamina bar on the left and on the item " +
+                "slots on the right — so raise MarginYPixels to about 95 or 115 to lift it off.");
 
             MinimapMarginX = cfg.Bind(
                 "Minimap", "MarginXPixels", 14f,
@@ -156,7 +159,9 @@ namespace PeakMapInteractive
 
             MinimapMarginY = cfg.Bind(
                 "Minimap", "MarginYPixels", 14f,
-                new ConfigDescription("How far in from the top or bottom of the screen.",
+                new ConfigDescription(
+                    "How far in from the top or bottom of the screen. This is the one to raise " +
+                    "if a bottom corner puts the GPS over the stamina bar or the item slots.",
                     new AcceptableValueRange<float>(0f, 600f)));
 
             MinimapPlayerColour = cfg.Bind(
