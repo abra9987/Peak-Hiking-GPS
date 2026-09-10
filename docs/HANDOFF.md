@@ -437,6 +437,73 @@ integer crops the move judders. **Measure the device in the recording rather
 than computing it from config**; the first attempt assumed 296x360 and the clip
 was actually made at 173x189, so the push barely moved.
 
+## The tracker as a physical item
+
+There is a 3D model of the device, finished and verified, waiting to be wired
+up. It lives outside this repository, under
+`Documents\DEVELOPMENT\Codex Playground\3d blender\peak_tracker\runtime\` —
+`peak_tracker.blend`, `.fbx`, `.glb`, `REPORT_V4.md`, and a
+`TrackerModelImporter.cs` to drop in `Assets/Editor` before importing the FBX,
+which builds the MeshCollider and stops the collision mesh from being drawn.
+
+The intended route is FBX to a Unity prefab, prefab to an AssetBundle,
+registered through `PEAKLib.Items`. A `.autoload_peakbundle` extension loads a
+bundle without a plugin of its own, but a working map and buttons need code, so
+that shortcut does not apply here.
+
+**The game is Unity 6000.3.15f1** — read out of `PEAK_Data/globalgamemanagers`
+on this machine, and the same version the PEAK modding guide names. That
+question is settled; do not re-open it.
+
+### What the model is
+
+Verified by reading the GLB rather than taking the export note's word for it:
+
+```
+PEAK_Tracker_ROOT
+  Tracker_Body      1806 tris, material Tracker_Body, texture tracker_body_palette
+  Tracker_Screen    front plane, material Tracker_Screen_Runtime, NO texture
+  Tracker_Collider  12 tris, no material, not drawn
+  Grip              empty where the hand holds it, (0, 0.013580, 0.042822) in Blender
+```
+
+89.63 x 25.48 x 120 mm with the antenna. Scale applied, root at 1,1,1.
+
+**The screen is deliberately bare.** An earlier version had the map baked into
+it as `screen_map.png`, which would have shipped an item permanently showing one
+frame of Shore reading "chest 19 m +4 m". It is its own mesh with its own
+material slot precisely so the plugin can put a `RenderTexture` there.
+
+**Its aspect is 635:600 = 1.058333**, matched to `Navigator.Screen` on purpose.
+Build the `RenderTexture` at that ratio — 512x484 — or the map stretches.
+
+### The three things the code has to do
+
+1. **Point the map camera at a RenderTexture.** `MinimapController` already
+   drives its own orthographic camera; this is `targetTexture` and little else.
+   Cheapest part by far.
+2. **Get the Canvas onto the screen.** The markers, the player arrow and the
+   readout strip are a screen-space Canvas. Rendering the whole Canvas to a
+   second `RenderTexture` and compositing is more likely to work than moving it
+   to World Space: every rectangle in `Navigator.cs` is a fraction of the
+   999x1216 artwork, and none of that arithmetic survives being re-fitted to six
+   centimetres of mesh.
+3. **Retire the drawn case from the UI.** With a physical device, `body.png`,
+   `glass-overlay.png` and the three button faces stop being UI and become the
+   source of the body texture instead. They do not disappear; their job changes.
+
+### Known to check on first import
+
+**Which way the screen faces.** The export note says the screen points at -Z.
+Unity's forward is +Z, so it may well import facing away from the camera. If the
+device arrives with its back to you, that is this and nothing more — rotate the
+prefab 180 degrees. Possibly it is already right; it has never been opened in
+Unity.
+
+**Which way up the map lands.** The screen's UV origin is bottom-left with +V
+up. Unity's `RenderTexture` origin flips between graphics APIs, so an upside
+down map on the first run is a texture flag, not a bug in the mapping.
+
 ## Open threads
 
 - **In-game settings.** Everything is already bound through BepInEx config, so
