@@ -855,10 +855,30 @@ the hands, and it is a different way of holding a thing from the passport's.
 **Idle hands clasped in front after putting the passport away are the
 game's**, seen on a fresh launch before any key of this mod was pressed.
 
-**Not yet checked after the centre-of-mass change:** the bias is backwards
-only now, no longer downwards, which should stop a thrown device standing
-itself upright on its bottom edge. It was reported still standing up once
-before the scale moved off the root; it has not been thrown since.
+### It lies on its back now, and why it would not before
+
+A dropped device stood on its bottom edge, leaning a few degrees, and stayed
+there; thrown, it lay on its glass as readily as on its back. Three things
+fixed it, and the first two were tried alone and did nothing visible:
+
+- **The collider is no longer the case's box.** `TrackerObject.RestlessHull`
+  builds a convex hull from the box's bounds with the back face inset on
+  every side and a low off-centre ridge down the front. Every face but the
+  back leans, so upright it stands on its front-bottom edge with the weight
+  behind, and on its glass it rocks off the ridge onto a side edge.
+- **The centre of mass is high and back**, (0, 0.03, 0.015) times Scale in
+  the root's frame: standing, the weight hangs behind the edge with a long
+  lever. It used to be low, which made a roly-poly.
+- **`sleepThreshold` is zero.** This was the one that mattered. PhysX puts a
+  body to sleep once its motion drops under a threshold, and a thin slab
+  landing nearly upright is under it before gravity has leaned on it — so it
+  froze mid-topple, a few degrees off vertical, and the hull and the weight
+  never got their say. With sleep off it falls over at once.
+
+A self-righting nudge was tried in between — a torque whenever it lay still
+in the wrong attitude — and rejected on sight: it rose onto its edge and
+sank onto its back like a stage trick. Physics that is only shaped, never
+pushed, is what reads as honest.
 
 ### The buttons move
 

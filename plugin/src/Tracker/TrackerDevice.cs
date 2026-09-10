@@ -71,12 +71,14 @@ namespace PeakMapInteractive.Tracker
         /// to the physics engine, and leaves the item free to be thrown and
         /// knocked about as before.
         ///
-        /// Backwards only, not downwards. The first version also dropped it
-        /// towards the bottom edge, and a slab with its weight low is a
-        /// roly-poly: however it was thrown it righted itself and stood
-        /// upright on that edge. A device lying on its back is the stable
-        /// state wanted, and that needs the weight behind the screen and
-        /// nowhere else.
+        /// Backwards and upwards, never downwards. The first version dropped
+        /// the weight towards the bottom edge, and a slab with its weight low
+        /// is a roly-poly: however it was thrown it righted itself and stood
+        /// upright on that edge. High and back is the opposite: standing, the
+        /// weight hangs behind the edge it stands on with a long lever, and
+        /// over it goes. Lying flat the height makes no difference. The shape
+        /// of the collider, in <see cref="TrackerObject"/>, leaves it no edge
+        /// to balance on; this decides which way it falls and how eagerly.
         ///
         /// In Start rather than Awake: Item.Awake adds the Rigidbody and then
         /// reads its centre of mass into a field of its own, so setting this any
@@ -92,68 +94,21 @@ namespace PeakMapInteractive.Tracker
             // In the root's units, which are unscaled: the size lives on the
             // model below, so the bias is grown by hand to match it.
             float scale = Mathf.Clamp(Plugin.Settings.TrackerScale.Value, 0.5f, 6f);
-            var bias = new Vector3(0f, 0f, 0.010f) * scale + TrackerItem.ModelOffset;
+            var bias = new Vector3(0f, 0.030f, 0.015f) * scale + TrackerItem.ModelOffset;
 
             rig.centerOfMass = bias;
+
+            // Never let it sleep. PhysX puts a body to sleep once its motion
+            // drops under a threshold, and a thin slab landing nearly upright
+            // moves under that threshold before gravity has had a chance to
+            // lean on it — so it froze on its bottom edge, tilted a few
+            // degrees, and stayed there. One rigidbody that never sleeps
+            // costs nothing worth counting.
+            rig.sleepThreshold = 0f;
 
             var item = GetComponentInParent<Item>();
             if (item != null) item.centerOfMass = bias;
         }
-
-        private Item _item;
-        private float _restSince = -1f;
-        private float _nextNudge;
-
-        /// <summary>
-        /// Rolls a device that has come to rest on the ground onto its back.
-        ///
-        /// Weighting alone does not do it. A slab dropped upright stands on
-        /// its bottom edge the way a book stands on a shelf, and one that
-        /// lands on its glass is as stable there as on its back; a few
-        /// centimetres of centre-of-mass bias decide which way it topples
-        /// only if it topples at all. So once it is lying still on the ground
-        /// in any attitude but back-down, it is given a small turn about its
-        /// own sideways axis — the back cover towards the ground — and left to
-        /// the physics again. Standing, that tips it over backwards; face
-        /// down, it rolls over its bottom edge, stands, and tips again. A
-        /// device being thrown, held or still tumbling is never touched.
-        /// </summary>
-        private void FixedUpdate()
-        {
-            if (_item == null) _item = GetComponentInParent<Item>();
-            if (_item == null || _item.rig == null) return;
-
-            Rigidbody rig = _item.rig;
-            bool resting =
-                _item.itemState == ItemState.Ground &&
-                !rig.isKinematic &&
-                rig.linearVelocity.sqrMagnitude < 0.01f &&
-                rig.angularVelocity.sqrMagnitude < 0.05f;
-
-            if (!resting)
-            {
-                _restSince = -1f;
-                return;
-            }
-
-            if (_restSince < 0f) _restSince = Time.time;
-
-            // Already on its back: the back cover points down.
-            if (rig.transform.forward.y < -0.85f) return;
-
-            // Give it a moment to settle, and a moment between nudges.
-            if (Time.time - _restSince < 0.3f || Time.time < _nextNudge) return;
-            _nextNudge = Time.time + 0.6f;
-
-            rig.AddTorque(rig.transform.right * NudgeSpin, ForceMode.VelocityChange);
-        }
-
-        /// <summary>
-        /// Angular velocity given by one nudge, in radians per second. Enough
-        /// to carry a standing slab past its balance point, not enough to
-        /// send it skittering across the sand.
-        /// </summary>
-        private const float NudgeSpin = 4f;
 
         private void Update()
         {
