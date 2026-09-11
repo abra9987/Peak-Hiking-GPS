@@ -188,6 +188,7 @@ CANDIDATES = [
     ("3-3q-right",   30,  28,  False,  0),
     ("4-held",       -8,  48,  False,  0),
     ("5-tilted",    -25,  30,  False, 14),
+    ("6-3q-right-low", 30, -28, False,  0),
 ]
 
 VIEWS = CANDIDATES if view_set == "candidates" else SURVEY
