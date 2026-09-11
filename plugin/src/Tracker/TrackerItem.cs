@@ -181,16 +181,17 @@ namespace PeakMapInteractive.Tracker
         /// <summary>
         /// What the item looks like in an inventory slot.
         ///
-        /// The drawn case, which has been in the assembly since before there
-        /// was a model: the same device by the same hand, and at the size a
-        /// slot actually shows — about forty pixels — a drawing reads better
-        /// than a photograph of the mesh would. Without one the slot draws a
-        /// white square, which is not a crash and looks like one.
+        /// A painted icon of the device, drawn from the model's own three-
+        /// quarter view with a bold outline, because at the size a slot
+        /// actually shows — about forty pixels — a painting reads and a
+        /// photograph of the mesh does not. The drawn case from the corner
+        /// map is the fallback, and without either the slot draws a white
+        /// square, which is not a crash and looks like one.
         /// </summary>
         private static Texture2D Icon()
         {
-            Sprite drawn = Minimap.Navigator.Body;
-            return drawn == null ? null : drawn.texture;
+            Sprite icon = Minimap.Navigator.ItemIcon ?? Minimap.Navigator.Body;
+            return icon == null ? null : icon.texture;
         }
 
         /// <summary>

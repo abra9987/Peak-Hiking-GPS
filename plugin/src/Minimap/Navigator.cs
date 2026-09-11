@@ -77,6 +77,9 @@ namespace PeakMapInteractive.Minimap
         internal static Sprite Body => Load("body.png");
         internal static Sprite Glass => Load("glass-overlay.png");
 
+        /// <summary>The device as an inventory slot shows it: painted, not photographed.</summary>
+        internal static Sprite ItemIcon => Load("item-icon.png");
+
         /// <summary>
         /// The face of one button. Left zooms out, right zooms in, and the
         /// middle one is drawn as a map pin.

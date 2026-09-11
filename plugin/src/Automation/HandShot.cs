@@ -58,13 +58,29 @@ namespace PeakMapInteractive.Automation
             // moves the item onto the hold position over several fixed
             // updates, and only then welds the hands to it. Photographing
             // before that has finished is a photograph of an item in mid-air.
-            character.refs.items.Equip(item);
+            // Picked up the way a player picks it up, so it lands in a slot
+            // and the slot's icon is in the picture; equipped outright as a
+            // fallback if the pickup did not take.
+            item.Interact(character);
 
+            // The pickup destroys the object picked up and makes another to
+            // equip, a few frames later than the first version waited for.
+            for (int i = 0; i < 200 && character.data.currentItem == null; i++)
+                yield return new WaitForFixedUpdate();
             for (int i = 0; i < 40; i++) yield return new WaitForFixedUpdate();
 
             yield return Walk(character);
 
-            Describe(character, spawned);
+            // The object picked up is not the object held: a pickup puts the
+            // item into a slot and the game makes a fresh one to equip, so
+            // the one spawned here may be gone by now.
+            Item held = character.data.currentItem;
+            if (held == null)
+            {
+                Plugin.Logger.LogWarning("Hand shot: nothing ended up in the hands.");
+                yield break;
+            }
+            Describe(character, held.gameObject);
 
             Camera camera = Camera.main;
             if (camera == null)
