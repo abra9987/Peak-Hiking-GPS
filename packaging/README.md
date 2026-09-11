@@ -30,7 +30,9 @@ you chose.
 - **Everyone else on the climb**, at any distance.
 - **Your altitude** and the distance to the nearest unopened chest.
 
-![In the shore](https://raw.githubusercontent.com/abra9987/Peak-Hiking-GPS/main/docs/media/shot-shore.jpg)
+![Found in a suitcase](https://raw.githubusercontent.com/abra9987/Peak-Hiking-GPS/main/docs/media/shot-luggage.jpg)
+
+![On a backpack](https://raw.githubusercontent.com/abra9987/Peak-Hiking-GPS/main/docs/media/shot-backpack.jpg)
 
 ## No game assets ship with this mod
 

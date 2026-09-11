@@ -55,10 +55,10 @@ accepts is narrower than it looks. Learned by doing it:
 | Field | Value |
 |---|---|
 | Name | Hiking GPS |
-| Summary | A live minimap for PEAK on a handheld GPS. Real terrain drawn by the game itself, with markers for chests, campfires, statues, capybaras and everyone else on the climb. Client side — only you install it. |
+| Summary | A handheld GPS you find in a suitcase and carry. The mountain on its screen, drawn by the game itself, with markers for chests, campfires, statues, capybaras and everyone else on the climb. Client side — only you install it. |
 | Description | paste `packaging/nexus-description.bbcode` |
-| File | `dist/HikingGPS-1.0.0-nexus.zip`, extracts over the game folder |
-| Version | 1.0.0 |
+| File | `dist/HikingGPS-1.1.0-nexus.zip`, extracts over the game folder |
+| Version | 1.1.0 |
 | Requirements | BepInEx 5 for PEAK, and PEAKLib (PEAKLib_Items + PEAKLib_Core) for the item — without it the corner map |
 | Permissions | code MIT; the GPS artwork is reserved — see `packaging/LICENSE` |
 
