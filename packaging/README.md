@@ -2,11 +2,20 @@
 
 ![Hiking GPS](https://raw.githubusercontent.com/abra9987/Peak-Hiking-GPS/main/docs/media/hero.png)
 
-A live minimap for PEAK, on a handheld GPS you carry. Press `M` and the mountain
-is there — real terrain, drawn by the game itself, seen from above.
+A handheld GPS for PEAK. Find it in a suitcase on the beach, hold it in both
+hands, and the mountain is on its screen — real terrain, drawn by the game
+itself, seen from above.
 
 **Client side.** Only you install it. Nobody else in the lobby needs it, the host
 does not need it, and it changes nothing anyone else sees.
+
+## What it is
+
+A real item. It turns up in beach luggage the way a rope or a compass does, it
+is picked up, carried, dropped, thrown, pocketed and hung on a backpack like
+anything else, and its screen is only on while it is in your hands. Put it
+away and it goes dark; take it out and it wakes where you left it, at the zoom
+you chose.
 
 ## What it shows
 
@@ -25,51 +34,55 @@ does not need it, and it changes nothing anyone else sees.
 
 ## No game assets ship with this mod
 
-The GPS itself is drawn for the mod. Every marker icon is photographed from your
-own copy of the game, once, the first time you see that kind of thing — so the
-pictures always match the version you have, and nothing of PEAK's artwork
-travels.
+The device is modelled and drawn for the mod. Every marker icon is photographed
+from your own copy of the game, once, the first time you see that kind of thing
+— so the pictures always match the version you have, and nothing of PEAK's
+artwork travels.
 
 ## Controls
 
 | Key | |
 |---|---|
-| `M` | Show or hide the GPS |
 | `=` / `-` | Zoom, in fixed steps from 20 m to 2000 m across |
 | `N` | Tilt: straight down, 75°, 45° |
+| `M` | Switch the device off and on while holding it |
+
+The buttons on the device press when you do, and it clicks.
 
 ## Install
 
-Install it with a mod manager, or drop `HikingGPS.dll` into `BepInEx/plugins/`
-by hand. Needs **BepInEx 5** (`BepInExPack PEAK`), which the manager installs
-for you.
+Install it with a mod manager and the rest comes with it. By hand, it needs
+**BepInEx 5** (`BepInExPack PEAK`) and **PEAKLib** (`PEAKLib_Items`, which
+brings `PEAKLib_Core` along) — put `HikingGPS.dll` into `BepInEx/plugins/`
+beside them.
 
-The map appears about ten seconds after a run starts, once your character is on
-their feet.
+Without PEAKLib the mod still works: there is no item to find, and the same
+map is pinned to a corner of the screen instead, shown with `M` once a run
+starts. That is also what you get with `Tracker/AsItem` set to `false`.
 
 ## Settings
 
 Everything is in `BepInEx/config/com.abra9987.hikinggps.cfg`, written on first
-launch.
+launch. The ones worth knowing:
 
 | Setting | |
 |---|---|
-| `SizePixels` | How large the GPS is drawn |
-| `Corner` | Which corner it hangs in |
-| `MarginXPixels`, `MarginYPixels` | How far in from the edges |
-| `PlayerMarkerColour` | The colour of the arrow that is you, as `#RRGGBB` |
-| `StartZoomStep` | Which zoom step it opens on |
-| `MarkerSizePixels` | How large the markers are |
-| `Icons` | Turn the photographed icons off, back to plain markers |
-| `StartDelaySeconds` | How long after the mountain loads before the map opens |
+| `Tracker/Rarity` | How often it turns up in luggage. `Rare` by default |
+| `Tracker/SpawnPools` | Which luggage. The beach by default — a map is worth most before the climb |
+| `Tracker/Scale` | How large the device is in the hands, as a multiple of its real size |
+| `Tracker/MarkerScale` | How large the markers are on its screen |
+| `Tracker/HoldX`, `HoldY`, `HoldZ`, `TiltDegrees` | Where it is held, relative to the head, and how far its screen leans back towards you |
+| `Minimap/StartZoomStep` | Which zoom step it wakes on the first time |
+| `Minimap/Icons` | Turn the photographed icons off, back to plain markers |
+| `Sound/Volume` | The chirps and clicks; `0` for silence |
 
-Both top corners are clear of PEAK's own HUD. The bottom two are not: at the
-default margin the GPS covers the stamina bar on the left and the item slots on
-the right. To use them, raise `MarginYPixels` to about 95 bottom-left and 115
+The `Minimap/SizePixels`, `Corner` and `Margin` settings size and place the
+corner map, for when there is no item. Both top corners are clear of PEAK's own
+HUD; the bottom two need `MarginYPixels` raised to about 95 bottom-left and 115
 bottom-right.
 
-Leave everything under `Automation` alone — it exists to develop the mod, takes
-the game over and can quit for you. It is off by default.
+Leave everything under `Automation` and `Debug` alone — they exist to develop
+the mod, take the game over and can quit for you. All of it is off by default.
 
 ## Notes
 

@@ -5,7 +5,7 @@ The two store pages, field by field, so neither has to be invented twice.
 ## Thunderstore
 
 The upload form reads most of it out of the archive itself. Upload
-`dist/HikingGPS-1.0.0-thunderstore.zip`, which already carries `manifest.json`,
+`dist/HikingGPS-1.1.0-thunderstore.zip`, which already carries `manifest.json`,
 `icon.png`, `CHANGELOG.md`, `LICENSE` and the page text in `README.md`.
 
 **Published:** <https://thunderstore.io/c/peak/p/abra9987/Hiking_GPS/>
@@ -14,7 +14,7 @@ The upload form reads most of it out of the archive itself. Upload
 |---|---|
 | Team | `abra9987`. **The name is permanent** — it cannot be renamed or deleted once a package is published, which it now is |
 | Package name | `Hiking_GPS` (from the manifest) |
-| Version | `1.0.0` |
+| Version | `1.1.0` |
 | Description | from the manifest, 121 characters |
 | Categories | **Mods**, **Client Side**, **Quality Of Life**, **Tools** |
 | NSFW | no |
@@ -59,7 +59,7 @@ accepts is narrower than it looks. Learned by doing it:
 | Description | paste `packaging/nexus-description.bbcode` |
 | File | `dist/HikingGPS-1.0.0-nexus.zip`, extracts over the game folder |
 | Version | 1.0.0 |
-| Requirements | BepInEx 5 for PEAK |
+| Requirements | BepInEx 5 for PEAK, and PEAKLib (PEAKLib_Items + PEAKLib_Core) for the item — without it the corner map |
 | Permissions | code MIT; the GPS artwork is reserved — see `packaging/LICENSE` |
 
 Images to upload, from `docs/media/`: `hero.png` as the main image, then

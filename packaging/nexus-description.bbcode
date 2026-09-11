@@ -1,8 +1,14 @@
 [size=5][b]Hiking GPS[/b][/size]
 
-A live minimap for PEAK, on a handheld GPS you carry. Press [b]M[/b] and the mountain is there — real terrain, drawn by the game itself, seen from above.
+A handheld GPS for PEAK. Find it in a suitcase on the beach, hold it in both hands, and the mountain is on its screen — real terrain, drawn by the game itself, seen from above.
 
 [b]Client side.[/b] Only you install it. Nobody else in the lobby needs it, the host does not need it, and it changes nothing anyone else sees.
+
+[line]
+
+[size=4][b]What it is[/b][/size]
+
+A real item. It turns up in beach luggage the way a rope or a compass does, it is picked up, carried, dropped, thrown, pocketed and hung on a backpack like anything else, and its screen is only on while it is in your hands. Put it away and it goes dark; take it out and it wakes where you left it, at the zoom you chose.
 
 [line]
 
@@ -20,30 +26,35 @@ A live minimap for PEAK, on a handheld GPS you carry. Press [b]M[/b] and the mou
 
 [size=4][b]No game assets ship with this mod[/b][/size]
 
-The GPS itself is drawn for the mod. Every marker icon is photographed from your own copy of the game, once, the first time you see that kind of thing — so the pictures always match the version you have, and nothing of PEAK's artwork travels.
+The device is modelled and drawn for the mod. Every marker icon is photographed from your own copy of the game, once, the first time you see that kind of thing — so the pictures always match the version you have, and nothing of PEAK's artwork travels.
 
 [line]
 
 [size=4][b]Controls[/b][/size]
 
 [list]
-[*][b]M[/b] — show or hide the GPS
 [*][b]=[/b] / [b]-[/b] — zoom, in fixed steps from 20 m to 2000 m across
 [*][b]N[/b] — tilt: straight down, 75°, 45°
+[*][b]M[/b] — switch the device off and on while holding it
 [/list]
+
+The buttons on the device press when you do, and it clicks.
 
 [line]
 
 [size=4][b]Requirements[/b][/size]
 
-[b]BepInEx 5[/b] for PEAK. Install that first.
+[list]
+[*][b]BepInEx 5[/b] for PEAK (BepInExPack PEAK).
+[*][b]PEAKLib[/b] — PEAKLib_Items and PEAKLib_Core, from the PEAKModding team. This is what makes the device an item you can find. Without it the mod still works: the same map is pinned to a corner of the screen instead, shown with [b]M[/b] once a run starts.
+[/list]
 
 [size=4][b]Installation[/b][/size]
 
 [list=1]
-[*]Install BepInEx 5 for PEAK.
+[*]Install BepInEx 5 for PEAK, then PEAKLib.
 [*]Extract this archive over your PEAK folder, so the file lands at [i]BepInEx/plugins/HikingGPS/HikingGPS.dll[/i].
-[*]Launch the game. The map appears about ten seconds after a run starts, once your character is on their feet.
+[*]Launch the game and open suitcases on the beach.
 [/list]
 
 To uninstall, delete that folder.
@@ -52,11 +63,11 @@ To uninstall, delete that folder.
 
 [size=4][b]Settings[/b][/size]
 
-Everything is in [i]BepInEx/config/com.abra9987.hikinggps.cfg[/i], written on first launch: the size of the GPS, which corner it hangs in, how far in from the edges, the colour of the arrow that is you, which zoom step it opens on, how large the markers are, and how long after the mountain loads before the map opens.
+Everything is in [i]BepInEx/config/com.abra9987.hikinggps.cfg[/i], written on first launch: how often the device turns up and in which luggage, how large it is in the hands and how its screen leans towards you, how large the markers are, the volume of its clicks, and which zoom step it wakes on the first time.
 
-Both top corners are clear of PEAK's own HUD. The bottom two are not: at the default margin the GPS covers the stamina bar on the left and the item slots on the right. To use them, raise [i]MarginYPixels[/i] to about 95 bottom-left and 115 bottom-right.
+The [i]Minimap[/i] settings size and place the corner map, for when there is no item. Both top corners are clear of PEAK's own HUD; the bottom two need [i]MarginYPixels[/i] raised to about 95 bottom-left and 115 bottom-right.
 
-Leave everything under [i]Automation[/i] alone — it exists to develop the mod, takes the game over and can quit for you. It is off by default.
+Leave everything under [i]Automation[/i] and [i]Debug[/i] alone — they exist to develop the mod, take the game over and can quit for you. All of it is off by default.
 
 [line]
 

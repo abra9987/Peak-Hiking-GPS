@@ -15,6 +15,14 @@ Both stores are live. This is no longer a thing being prepared.
 - **Nexus:** <https://www.nexusmods.com/peak/mods/228> — mod 228.
 - **Source:** <https://github.com/abra9987/Peak-Hiking-GPS>, public.
 
+**1.1.0 is built and not yet uploaded**: the device as an item, the grip,
+the landing, the suitcase, the backpack, the icon. `dist/HikingGPS-1.1.0-*.zip`.
+The manifest now depends on `PEAKModding-PEAKLib_Items-1.6.2` and
+`PEAKModding-PEAKLib_Core-1.7.2`, taken off the Thunderstore API on the day;
+Thunderstore installs them with the mod, Nexus users are told to. Both store
+texts (`packaging/README.md`, `packaging/nexus-description.bbcode`) were
+rewritten for the item. Uploading is the two store forms in `STORE.md`.
+
 Three releases followed the first, each because publishing showed something
 reading the files had not:
 

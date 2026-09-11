@@ -1,5 +1,35 @@
 # Changelog
 
+## 1.1.0
+
+The GPS is a thing you find and carry.
+
+- **A real item.** The device turns up in beach luggage (`Rare` by default),
+  and is picked up, carried in both hands, dropped, thrown, pocketed and hung
+  on a backpack like any other item. The map is on its screen, and only while
+  it is in your hands: put it away and it goes dark, take it out and it wakes
+  at the zoom you chose. This needs **PEAKLib** (`PEAKLib_Items`), which a
+  mod manager installs with the mod. Without it the map is pinned to a corner
+  of the screen as before.
+- **Held the way the game holds its own things.** Arms out, palms on the case,
+  the screen leaned back towards you — settled by eye in front of the airport
+  mirror rather than by numbers.
+- **It lands on its back.** Dropped or thrown, it ends up screen-up rather
+  than standing on an edge; in a suitcase it lies flat, in the middle,
+  antenna towards the lid.
+- **On a backpack it hangs screen-out**, in any of the four slots.
+- **Bigger and bolder.** The device is four times its real size in the hands,
+  which is what PEAK's hands need; markers on its screen are doubled and the
+  readout is bold.
+- **The zoom is kept** between glances. It used to reset every time the map
+  opened.
+- **The buttons press** when you press them, and it clicks — six sounds,
+  chirps on waking and sleeping, a knock at the end of the zoom ladder.
+- **An inventory icon** painted from the model.
+
+Settings under `Tracker` cover all of it: rarity and luggage, size, where it
+is held, how it lies in a suitcase, and the marker size on the screen.
+
 ## 1.0.3
 
 - New icon: the GPS itself, large, on a plain grey field. The old one carried
