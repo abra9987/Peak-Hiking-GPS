@@ -67,6 +67,25 @@ Images to upload, from `docs/media/`: `hero.png` as the main image, then
 a clip if a video is wanted; the GIF is three times the size for a worse picture
 and is only worth using where a video cannot go.
 
+### Updating a published Nexus mod, learned on 1.1.0
+
+- The edit flow is five steps at `nexusmods.com/games/peak/mods/228/edit/general`
+  and so on. General holds the mod version, the short and the full
+  description; the full description's `[ ]` toolbar button is the BBCode
+  source. `Save` greys out when everything is saved.
+- **Files: use "Update existing file"**, pick the old main file, tick
+  "Archive existing file", then set the display name and version — they
+  reset to the old file's values the moment an existing file is chosen, so
+  set them after, not before. "Update mod version to match this file's
+  version" is fine once the versions agree.
+- **PEAKLib is not on Nexus**, so it cannot be a file-to-file requirement;
+  the description carries it, with the Thunderstore install.
+- Gallery images upload the moment they are chosen; the old ones are deleted
+  one at a time through each picture's menu, and the grid reflows after
+  each, so the same slot is clicked again.
+- The page's renderer stalls screenshots for ten seconds at a time; the
+  accessibility tree and a line of JavaScript keep answering.
+
 ## Both
 
 The archives are built by `pwsh tools/package.ps1` — on this machine,
