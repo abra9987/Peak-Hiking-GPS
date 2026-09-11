@@ -148,6 +148,9 @@ namespace PeakMapInteractive.Automation
             // above and from the front.
             yield return LuggageShot.Run(folder);
 
+            // And on a backpack, one in every slot.
+            yield return BackpackShot.Run(folder);
+
             yield return Leave();
         }
 
