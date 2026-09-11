@@ -245,10 +245,39 @@ namespace PeakMapInteractive.Tracker
                 $"Tracker: laid in '{nearest.name}' at local {local:F3}, turn {s.TrackerLuggageTurn.Value:0}.");
         }
 
+        private Transform _model;
+        private bool _flippedForBackpack;
+
+        /// <summary>
+        /// On a backpack, screen out.
+        ///
+        /// A backpack hangs its items on fixed points that all face the same
+        /// way, and the way they face puts this device's back cover outward
+        /// — a battery panel where a screen should be. Inside its root the
+        /// model is turned to face its owner (the item's forward has to be
+        /// the back of the case, for the game's hold to point the screen at
+        /// the face); on a backpack that turn is undone, and put back the
+        /// moment the device is anything but stowed.
+        /// </summary>
+        private void FaceOutOnBackpack()
+        {
+            if (_item == null) _item = GetComponentInParent<Item>();
+            if (_item == null) return;
+            if (_model == null) _model = transform.Find("Model") ?? transform;
+
+            bool stowed = _item.itemState == ItemState.InBackpack;
+            if (stowed == _flippedForBackpack) return;
+            _flippedForBackpack = stowed;
+
+            if (stowed) _model.localRotation = Quaternion.identity;
+            else TrackerItem.PlaceModel(_model);
+        }
+
         private void Update()
         {
             UpdateScreen();
             PlaceInLuggage();
+            FaceOutOnBackpack();
 
             for (int i = 0; i < _buttons.Length; i++)
             {

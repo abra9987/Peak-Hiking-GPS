@@ -244,7 +244,7 @@ namespace PeakMapInteractive.Tracker
         private static Vector3 HoldPos => new Vector3(
             Plugin.Settings.TrackerHoldX.Value, Plugin.Settings.TrackerHoldY.Value, Plugin.Settings.TrackerHoldZ.Value);
 
-        private static void PlaceModel(Transform model)
+        internal static void PlaceModel(Transform model)
         {
             if (model == null) return;
             model.localPosition = ModelOffset;
